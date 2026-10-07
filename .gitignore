@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+scripts/node_modules
+*.inspect.ndjson
+
+.vercel
