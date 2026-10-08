@@ -266,14 +266,17 @@ function App() {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error || !data.user) return error?.message || t(locale, 'loginInvalid');
 
+      console.info('Sweezypop login user id:', data.user.id);
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('auth_user_id', data.user.id)
         .eq('active', true)
-        .single();
+        .maybeSingle();
 
-      if (profileError || !profile) return t(locale, 'loginNoProfile');
+      if (profileError) return `${t(locale, 'loginNoProfile')} (${profileError.message})`;
+      if (!profile) return `${t(locale, 'loginNoProfile')} User id: ${data.user.id}`;
       const remoteState = await loadRemoteState({ categories, items, orders, users, theme, hours });
       if (remoteState) {
         setCategories(remoteState.categories);
