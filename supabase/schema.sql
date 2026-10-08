@@ -137,6 +137,7 @@ $$;
 drop policy if exists "Public can read restaurants" on restaurants;
 drop policy if exists "Managers can update restaurants" on restaurants;
 drop policy if exists "Managers can read profiles" on profiles;
+drop policy if exists "Users can read own profile" on profiles;
 drop policy if exists "Admins can manage profiles" on profiles;
 drop policy if exists "Public can read categories" on categories;
 drop policy if exists "Managers can manage categories" on categories;
@@ -162,6 +163,10 @@ with check (can_manage_restaurant(id));
 create policy "Managers can read profiles"
 on profiles for select
 using (can_manage_restaurant(restaurant_id));
+
+create policy "Users can read own profile"
+on profiles for select
+using (auth_user_id = auth.uid() and active = true);
 
 create policy "Admins can manage profiles"
 on profiles for all

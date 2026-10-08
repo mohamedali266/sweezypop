@@ -252,10 +252,10 @@ function App() {
     setSubmittedOrderId(order.id);
   };
 
-  const handleLogin = async (email: string, password: string) => {
+  const handleLogin = async (email: string, password: string): Promise<string | null> => {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error || !data.user) return false;
+      if (error || !data.user) return error?.message || t(locale, 'loginInvalid');
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -264,11 +264,11 @@ function App() {
         .eq('active', true)
         .single();
 
-      if (profileError || !profile) return false;
+      if (profileError || !profile) return t(locale, 'loginNoProfile');
       setAuthRole(profile.role);
       setView(profile.role);
       window.history.replaceState(null, '', window.location.pathname);
-      return true;
+      return null;
     }
 
     const matchedUser = users.find((user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.active);
@@ -276,7 +276,7 @@ function App() {
     setAuthRole(role);
     setView(role);
     window.history.replaceState(null, '', window.location.pathname);
-    return true;
+    return null;
   };
 
   const handleLogout = () => {
@@ -399,7 +399,7 @@ function TopNav({
   );
 }
 
-function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSettings; onLogin: (email: string, password: string) => Promise<boolean> }) {
+function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSettings; onLogin: (email: string, password: string) => Promise<string | null> }) {
   const [email, setEmail] = useState('owner@sweezypop.test');
   const [password, setPassword] = useState('demo1234');
   const [error, setError] = useState('');
@@ -407,8 +407,8 @@ function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSet
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!email.trim() || !password.trim()) return;
-    onLogin(email, password).then((success) => {
-      setError(success ? '' : t(locale, 'loginInvalid'));
+    onLogin(email, password).then((message) => {
+      setError(message || '');
     });
   };
 
