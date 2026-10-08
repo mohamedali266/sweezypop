@@ -139,6 +139,7 @@ async function readMenuRowsFromWorkbook(file: File) {
 
 function App() {
   const [view, setView] = useState<View>('menu');
+  const [showLoader, setShowLoader] = useState(true);
   const [locale, setLocale] = useState<Locale>('en');
   const [layout, setLayout] = useState<MenuLayout>(() => loadStored(storageKeys.layout, 'grid'));
   const [items, setItems] = useState<MenuItem[]>(() => loadStored(storageKeys.items, seedItems));
@@ -153,6 +154,11 @@ function App() {
   const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(null);
   const [submittedOrderId, setSubmittedOrderId] = useState('');
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
+
+  useEffect(() => {
+    const loaderTimer = window.setTimeout(() => setShowLoader(false), 3000);
+    return () => window.clearTimeout(loaderTimer);
+  }, []);
 
   useEffect(() => {
     const syncHashRoute = () => {
@@ -349,6 +355,7 @@ function App() {
         } as CSSProperties
       }
     >
+      {showLoader && <LoaderScreen />}
       <TopNav view={view} setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
       {view === 'menu' ? (
         <MenuPage
@@ -394,6 +401,14 @@ function App() {
           setHours={setHours}
         />
       )}
+    </div>
+  );
+}
+
+function LoaderScreen() {
+  return (
+    <div className="app-loader" role="status" aria-label="Loading Sweezypop">
+      <img src="/sweezypop-loader-v3.svg" alt="SweezyPop by Ammaro" />
     </div>
   );
 }

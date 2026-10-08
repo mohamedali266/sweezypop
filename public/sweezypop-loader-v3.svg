@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 0 640 380" role="img" aria-label="SweezyPop by Ammaro">
+  <title>SweezyPop by Ammaro</title>
+  <defs>
+    <linearGradient id="gSweezy" gradientUnits="userSpaceOnUse" x1="10" y1="0" x2="620" y2="0">
+      <stop offset="0" stop-color="#ff2d78"/>
+      <stop offset="0.55" stop-color="#ff7a2f"/>
+      <stop offset="1" stop-color="#ffc400"/>
+    </linearGradient>
+    <linearGradient id="gPop" gradientUnits="userSpaceOnUse" x1="340" y1="0" x2="660" y2="0">
+      <stop offset="0" stop-color="#00c2ff"/>
+      <stop offset="0.5" stop-color="#5b5bff"/>
+      <stop offset="1" stop-color="#b44dff"/>
+    </linearGradient>
+    <linearGradient id="gBy" gradientUnits="userSpaceOnUse" x1="160" y1="0" x2="470" y2="0">
+      <stop offset="0" stop-color="#ff2d78"/>
+      <stop offset="1" stop-color="#b44dff"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .l {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      animation: draw 9s ease-in-out infinite both;
+      animation-delay: calc(var(--i) * 0.3s);
+    }
+    .s { stroke: url(#gSweezy); stroke-width: 18; }
+    .p { stroke: url(#gPop);    stroke-width: 29; }  /* 29 x 0.62 scale = ~18 */
+    .t { stroke: url(#gBy);     stroke-width: 4; }   /* thin line for "By Ammaro" */
+    @keyframes draw {
+      0%   { stroke-dashoffset: 1; opacity: 1; }
+      30%  { stroke-dashoffset: 0; opacity: 1; }
+      85%  { stroke-dashoffset: 0; opacity: 1; }
+      95%  { stroke-dashoffset: 0; opacity: 0; }
+      100% { stroke-dashoffset: 1; opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .l { animation: none; stroke-dashoffset: 0; }
+    }
+  </style>
+
+  <!-- ===== Pop (above the "w") ===== -->
+  <g transform="translate(-140 -70.6) scale(0.62)">
+    <path class="l p" style="--i:0" pathLength="1"
+          d="M350 300 L350 160 C430 146 452 236 350 238"/>
+    <path class="l p" style="--i:1" pathLength="1"
+          d="M505 210 C530 210 548 230 548 255 C548 282 530 300 505 300 C480 300 462 282 462 255 C462 230 480 210 505 210"/>
+    <path class="l p" style="--i:2" pathLength="1"
+          d="M592 212 L592 345 M592 232 C604 208 650 210 650 256 C650 300 606 304 592 282"/>
+  </g>
+
+  <!-- ===== Sweezy ===== -->
+  <g transform="translate(0 70)">
+    <path class="l s" style="--i:3" pathLength="1"
+          d="M98 62 C90 26 28 26 26 64 C24 108 100 104 98 148 C96 192 32 196 16 156"/>
+    <path class="l s" style="--i:4" pathLength="1"
+          d="M120 100 L140 188 L170 125 L200 188 L220 100"/>
+    <path class="l s" style="--i:5" pathLength="1"
+          d="M248 148 L322 148 C324 114 304 100 286 100 C260 100 244 124 248 152 C252 184 290 198 322 172"/>
+    <path class="l s" style="--i:6" pathLength="1" transform="translate(95 0)"
+          d="M248 148 L322 148 C324 114 304 100 286 100 C260 100 244 124 248 152 C252 184 290 198 322 172"/>
+    <path class="l s" style="--i:7" pathLength="1"
+          d="M442 102 L508 102 L442 188 L510 188"/>
+    <path class="l s" style="--i:8" pathLength="1"
+          d="M530 100 L564 184 M608 100 L572 196 C560 226 542 236 520 228"/>
+  </g>
+
+  <!-- ===== By Ammaro (thin line) ===== -->
+  <g transform="translate(164 345)">
+    <!-- B -->
+    <path class="l t" style="--i:9"    pathLength="1" d="M0 -38 L0 0 M0 -38 C26 -40 26 -20 0 -20 C30 -20 30 0 0 0"/>
+    <!-- y -->
+    <path class="l t" style="--i:9.5"  pathLength="1" d="M38 -26 L50 -4 M62 -26 L46 14 C42 22 36 24 32 22"/>
+    <!-- A -->
+    <path class="l t" style="--i:10"   pathLength="1" d="M88 0 L103 -38 L118 0 M94 -14 L112 -14"/>
+    <!-- m -->
+    <path class="l t" style="--i:10.5" pathLength="1" d="M130 0 L130 -26 M130 -18 C130 -30 146 -30 146 -18 L146 0 M146 -18 C146 -30 162 -30 162 -18 L162 0"/>
+    <!-- m -->
+    <path class="l t" style="--i:11"   pathLength="1" transform="translate(34 0)" d="M130 0 L130 -26 M130 -18 C130 -30 146 -30 146 -18 L146 0 M146 -18 C146 -30 162 -30 162 -18 L162 0"/>
+    <!-- a -->
+    <path class="l t" style="--i:11.5" pathLength="1" d="M229 -26 L229 0 M229 -13 C229 -26 206 -26 206 -13 C206 0 229 0 229 -13" transform="translate(0 0)"/>
+    <!-- r -->
+    <path class="l t" style="--i:12"   pathLength="1" d="M245 0 L245 -26 M245 -16 C247 -26 258 -28 264 -24"/>
+    <!-- o -->
+    <path class="l t" style="--i:12.5" pathLength="1" d="M288 -26 C297 -26 301 -19 301 -13 C301 -6 297 0 288 0 C279 0 275 -6 275 -13 C275 -19 279 -26 288 -26"/>
+  </g>
+</svg>
