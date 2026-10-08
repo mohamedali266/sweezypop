@@ -222,6 +222,7 @@ export async function saveRemoteState(state: RemoteState) {
 
   await syncCategories(restaurantId, state.categories);
   await syncMenuItems(restaurantId, state.items);
+  await deleteMissing('categories', restaurantId, state.categories.map((category) => category.id));
   await syncHours(restaurantId, state.hours);
   await syncOrders(restaurantId, state.orders);
   await syncUsers(restaurantId, state.users, state.theme.siteName);
@@ -259,7 +260,11 @@ export async function createRemoteOrder(order: Order) {
 }
 
 async function deleteMissing(table: string, restaurantId: string, ids: string[]) {
-  if (!supabase || ids.length === 0) return;
+  if (!supabase) return;
+  if (ids.length === 0) {
+    await supabase.from(table).delete().eq('restaurant_id', restaurantId);
+    return;
+  }
   await supabase.from(table).delete().eq('restaurant_id', restaurantId).not('id', 'in', `(${ids.map((id) => `"${id}"`).join(',')})`);
 }
 
@@ -273,7 +278,6 @@ async function syncCategories(restaurantId: string, categories: Category[]) {
     sort_order: category.sortOrder,
   }));
   if (rows.length) await supabase.from('categories').upsert(rows);
-  await deleteMissing('categories', restaurantId, categories.map((category) => category.id));
 }
 
 async function syncMenuItems(restaurantId: string, items: MenuItem[]) {

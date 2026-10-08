@@ -149,7 +149,7 @@ export const defaultTheme: ThemeSettings = {
   siteName: 'Sweezypop',
   logoText: 'Sweezypop',
   logoUrl: '',
-  menuUrl: import.meta.env.VITE_MENU_PUBLIC_URL || 'https://sweezypop.vercel.app',
+  menuUrl: import.meta.env.VITE_MENU_PUBLIC_URL || 'https://sweezypop-1.vercel.app/',
 };
 
 export const openingHours: OpeningHour[] = [

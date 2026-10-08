@@ -48,9 +48,15 @@ type AppearanceTab = 'brand' | 'colors' | 'layout' | 'qr';
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
+const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
 
 function itemDescription(item: MenuItem, locale: Locale) {
   return item.description[locale].split('__offer_meta__:')[0].trim();
+}
+
+function parseImportedPrice(value: unknown) {
+  const normalized = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
+  return Number(normalized || 0);
 }
 
 const storageKeys = {
@@ -208,6 +214,18 @@ function App() {
     // Run once on boot. Fallback values are only used when remote rows are empty.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!configuredMenuUrl || theme.menuUrl === configuredMenuUrl) return;
+    setTheme((current) => ({ ...current, menuUrl: configuredMenuUrl }));
+  }, [theme.menuUrl]);
+
+  useEffect(() => {
+    if (activeCategory === 'all') return;
+    if (!categories.some((category) => category.id === activeCategory)) {
+      setActiveCategory('all');
+    }
+  }, [activeCategory, categories]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !remoteReady || !authRole) return;
@@ -923,6 +941,11 @@ function Dashboard(props: {
     props.setCategories([{ id: `cat-${Date.now()}`, name: { en: 'New category', de: 'Neue Kategorie' }, sortOrder: 0 }, ...props.categories]);
   };
 
+  const deleteCategory = (categoryId: string) => {
+    props.setCategories(props.categories.filter((category) => category.id !== categoryId));
+    props.setItems(props.items.filter((item) => item.categoryId !== categoryId));
+  };
+
   const createOffer = (payload: { name: string; description: string; imageUrl: string; itemIds: string[]; price: number }) => {
     if (!payload.name.trim() || !payload.itemIds.length || !payload.price) return;
     let offerCategory = props.categories.find((category) => category.id === 'offers' || category.name.en.toLowerCase() === 'offers');
@@ -984,24 +1007,30 @@ function Dashboard(props: {
 
   const importItemsFromExcel = async (file: File) => {
     const rows = await readMenuRowsFromWorkbook(file);
-    const categoryMap = new Map(props.categories.map((category) => [category.name.en.toLowerCase(), category]));
+    const categoryMap = new Map<string, Category>();
+    props.categories.forEach((category) => {
+      categoryMap.set(category.name.en.toLowerCase(), category);
+      categoryMap.set(category.name.de.toLowerCase(), category);
+    });
     const importedCategories = [...props.categories];
     const importedItems: MenuItem[] = [];
 
     rows.forEach((row, index) => {
       const nameEn = String(row.name_en || '').trim();
       const categoryName = String(row.category || '').trim();
-      const price = Number(row.price || 0);
+      const categoryDe = String(row.category_de || row.category || '').trim();
+      const price = parseImportedPrice(row.price);
       if (!nameEn || !categoryName || Number.isNaN(price)) return;
 
       let category = categoryMap.get(categoryName.toLowerCase());
       if (!category) {
         category = {
           id: `cat-${Date.now()}-${index}`,
-          name: { en: categoryName, de: categoryName },
+          name: { en: categoryName, de: categoryDe || categoryName },
           sortOrder: importedCategories.length + 1,
         };
         categoryMap.set(categoryName.toLowerCase(), category);
+        categoryMap.set((categoryDe || categoryName).toLowerCase(), category);
         importedCategories.push(category);
       }
 
@@ -1132,7 +1161,7 @@ function Dashboard(props: {
                       props.setCategories(props.categories.map((current) => (current.id === category.id ? { ...current, name: { ...current.name, [props.locale]: event.target.value } } : current)))
                     }
                   />
-                  <button onClick={() => props.setCategories(props.categories.filter((current) => current.id !== category.id))}>
+                  <button onClick={() => deleteCategory(category.id)}>
                     <Trash2 size={16} />
                   </button>
                 </div>
