@@ -127,8 +127,8 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
   const privateState = await loadPrivateRemoteState(restaurantId, itemMap, fallback);
 
   return {
-    categories: categories.length ? categories : fallback.categories,
-    items: items.length ? items : fallback.items,
+    categories,
+    items,
     hours: (hoursResult.data || []).length
       ? (hoursResult.data || []).map((hour) => ({
           day: hour.day,
@@ -265,7 +265,16 @@ async function deleteMissing(table: string, restaurantId: string, ids: string[])
     await supabase.from(table).delete().eq('restaurant_id', restaurantId);
     return;
   }
-  await supabase.from(table).delete().eq('restaurant_id', restaurantId).not('id', 'in', `(${ids.map((id) => `"${id}"`).join(',')})`);
+
+  const { data, error } = await supabase.from(table).select('id').eq('restaurant_id', restaurantId);
+  if (error) throw error;
+
+  const keepIds = new Set(ids);
+  const deleteIds = (data || []).map((row) => String(row.id)).filter((id) => !keepIds.has(id));
+  if (deleteIds.length) {
+    const { error: deleteError } = await supabase.from(table).delete().in('id', deleteIds);
+    if (deleteError) throw deleteError;
+  }
 }
 
 async function syncCategories(restaurantId: string, categories: Category[]) {
