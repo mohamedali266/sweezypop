@@ -41,11 +41,13 @@ export interface Order {
 
 export interface AppUser {
   id: string;
+  authUserId?: string;
   name: string;
   email: string;
   role: UserRole;
   restaurant: string;
   active: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface ThemeSettings {

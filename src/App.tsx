@@ -29,11 +29,20 @@ import {
 } from 'lucide-react';
 import { categories as seedCategories, defaultTheme, initialOrders, menuItems as seedItems, openingHours as seedHours, users as seedUsers } from './data';
 import { t } from './i18n';
-import { createRemoteOrder, loadRemoteState, saveRemoteState, type RemoteState } from './remoteData';
+import {
+  completeTemporaryPasswordChange,
+  createAdminUser,
+  createRemoteOrder,
+  loadRemoteState,
+  resetAdminUserPassword,
+  saveRemoteState,
+  type AdminUserPayload,
+  type RemoteState,
+} from './remoteData';
 import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, ThemeSettings } from './types';
 
-type View = 'menu' | 'login' | 'owner' | 'admin';
+type View = 'menu' | 'login' | 'owner' | 'admin' | 'password-change';
 type DashboardSection = 'overview' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'qr';
 
@@ -265,8 +274,17 @@ function App() {
         .single();
 
       if (profileError || !profile) return t(locale, 'loginNoProfile');
+      const remoteState = await loadRemoteState({ categories, items, orders, users, theme, hours });
+      if (remoteState) {
+        setCategories(remoteState.categories);
+        setItems(remoteState.items);
+        setOrders(remoteState.orders);
+        setUsers(remoteState.users);
+        setTheme(remoteState.theme);
+        setHours(remoteState.hours);
+      }
       setAuthRole(profile.role);
-      setView(profile.role);
+      setView(profile.must_change_password ? 'password-change' : profile.role);
       window.history.replaceState(null, '', window.location.pathname);
       return null;
     }
@@ -327,6 +345,8 @@ function App() {
         />
       ) : view === 'login' || !authRole ? (
         <LoginPage locale={locale} theme={theme} onLogin={handleLogin} />
+      ) : view === 'password-change' ? (
+        <PasswordChangePage locale={locale} theme={theme} onComplete={() => setView(authRole)} onLogout={handleLogout} />
       ) : (
         <Dashboard
           mode={view}
@@ -435,6 +455,73 @@ function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSet
           <button className="primary-action full" type="submit">
             <LogIn size={18} />
             {t(locale, 'enterDashboard')}
+          </button>
+          {error && <p className="form-error">{error}</p>}
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function PasswordChangePage({ locale, theme, onComplete, onLogout }: { locale: Locale; theme: ThemeSettings; onComplete: () => void; onLogout: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (password.length < 12) {
+      setError(t(locale, 'passwordTooShort'));
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError(t(locale, 'passwordMismatch'));
+      return;
+    }
+    if (!supabase) {
+      onComplete();
+      return;
+    }
+
+    setSaving(true);
+    supabase.auth
+      .updateUser({ password })
+      .then(async ({ error: updateError }) => {
+        if (updateError) throw updateError;
+        await completeTemporaryPasswordChange();
+        onComplete();
+      })
+      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : t(locale, 'passwordChangeFailed')))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <main className="login-shell">
+      <section className="login-card animated-panel">
+        <div className="login-visual">
+          <BrandMark theme={theme} />
+          <h1>{t(locale, 'changePasswordTitle')}</h1>
+          <p>{t(locale, 'changePasswordCopy')}</p>
+        </div>
+        <form className="login-form" onSubmit={submit}>
+          <span className="eyebrow dark">{t(locale, 'temporaryPassword')}</span>
+          <h2>{t(locale, 'setNewPassword')}</h2>
+          <p className="muted">{t(locale, 'passwordRules')}</p>
+          <label>
+            {t(locale, 'newPassword')}
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" />
+          </label>
+          <label>
+            {t(locale, 'confirmPassword')}
+            <input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" />
+          </label>
+          <button className="primary-action full" type="submit" disabled={saving}>
+            <Save size={18} />
+            {saving ? t(locale, 'saving') : t(locale, 'updatePassword')}
+          </button>
+          <button type="button" className="small-action neutral full-width" onClick={onLogout}>
+            {t(locale, 'signOut')}
           </button>
           {error && <p className="form-error">{error}</p>}
         </form>
@@ -1650,28 +1737,79 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
 }
 
 function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppUser[]; setUsers: (users: AppUser[]) => void }) {
-  const addOwner = () => {
-    setUsers([
-      ...users,
-      {
+  const [formOpen, setFormOpen] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<AdminUserPayload>({
+    name: '',
+    email: '',
+    role: 'owner',
+    restaurant: 'Sweezypop',
+    active: true,
+  });
+
+  const addUser = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreating(true);
+    setActionError('');
+
+    if (!isSupabaseConfigured) {
+      const localUser: AppUser = {
         id: `u-${Date.now()}`,
-        name: 'New owner',
-        email: 'owner@sweezypop.test',
-        role: 'owner',
-        restaurant: 'New restaurant',
-        active: true,
-      },
-    ]);
+        name: form.name,
+        email: form.email,
+        role: form.role,
+        restaurant: form.restaurant,
+        active: form.active,
+        mustChangePassword: true,
+      };
+      setUsers([...users, localUser]);
+      setTemporaryPassword('DemoOnly-ChangeMe!42');
+      setCreating(false);
+      setFormOpen(false);
+      return;
+    }
+
+    createAdminUser(form)
+      .then(({ user, temporaryPassword: password }) => {
+        setUsers([...users, user]);
+        setTemporaryPassword(password);
+        setFormOpen(false);
+        setForm({ name: '', email: '', role: 'owner', restaurant: form.restaurant, active: true });
+      })
+      .catch((error: unknown) => setActionError(error instanceof Error ? error.message : t(locale, 'userCreateFailed')))
+      .finally(() => setCreating(false));
+  };
+
+  const resetPassword = (user: AppUser) => {
+    setActionError('');
+    if (!isSupabaseConfigured) {
+      setTemporaryPassword('DemoOnly-Reset!42');
+      setUsers(users.map((current) => (current.id === user.id ? { ...current, mustChangePassword: true } : current)));
+      return;
+    }
+
+    resetAdminUserPassword(user.id)
+      .then(({ temporaryPassword: password }) => {
+        setTemporaryPassword(password);
+        setUsers(users.map((current) => (current.id === user.id ? { ...current, mustChangePassword: true } : current)));
+      })
+      .catch((error: unknown) => setActionError(error instanceof Error ? error.message : t(locale, 'passwordResetFailed')));
   };
 
   return (
     <section className="dashboard-card" id="users">
       <div className="section-head">
-        <h2>{t(locale, 'users')}</h2>
-        <button className="small-action" onClick={addOwner}>
+        <div>
+          <h2>{t(locale, 'users')}</h2>
+          <p className="muted">{t(locale, 'usersSecurityCopy')}</p>
+        </div>
+        <button className="small-action" onClick={() => setFormOpen(true)}>
           <CircleUserRound size={16} /> {t(locale, 'addOwner')}
         </button>
       </div>
+      {actionError && <p className="form-error">{actionError}</p>}
       <div className="user-table">
         <div className="table-head">
           <span>{t(locale, 'name')}</span>
@@ -1679,6 +1817,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
           <span>{t(locale, 'role')}</span>
           <span>{t(locale, 'restaurant')}</span>
           <span>{t(locale, 'status')}</span>
+          <span>{t(locale, 'password')}</span>
         </div>
         {users.map((user) => (
           <div key={user.id} className="table-row">
@@ -1692,12 +1831,97 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
             <button className={user.active ? 'status active' : 'status'} onClick={() => setUsers(users.map((current) => (current.id === user.id ? { ...current, active: !current.active } : current)))}>
               {user.active ? t(locale, 'active') : t(locale, 'inactive')}
             </button>
+            <button className={user.mustChangePassword ? 'status' : 'status active'} type="button" onClick={() => resetPassword(user)}>
+              {user.mustChangePassword ? t(locale, 'pendingChange') : t(locale, 'resetPassword')}
+            </button>
             <button onClick={() => setUsers(users.filter((current) => current.id !== user.id))}>
               <Trash2 size={16} />
             </button>
           </div>
         ))}
       </div>
+
+      {formOpen && (
+        <div className="modal-overlay" role="presentation" onClick={() => setFormOpen(false)}>
+          <form className="item-form-card user-form-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'addOwner')} onClick={(event) => event.stopPropagation()} onSubmit={addUser}>
+            <div className="section-head">
+              <div>
+                <span className="eyebrow dark">{t(locale, 'users')}</span>
+                <h2>{t(locale, 'createUser')}</h2>
+              </div>
+              <button type="button" className="ghost-icon dark" onClick={() => setFormOpen(false)} aria-label={t(locale, 'close')}>
+                x
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                {t(locale, 'name')}
+                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+              </label>
+              <label>
+                {t(locale, 'email')}
+                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} type="email" required />
+              </label>
+              <label>
+                {t(locale, 'role')}
+                <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as AppUser['role'] })}>
+                  <option value="owner">{t(locale, 'owner')}</option>
+                  <option value="admin">{t(locale, 'admin')}</option>
+                </select>
+              </label>
+              <label>
+                {t(locale, 'restaurant')}
+                <input value={form.restaurant} onChange={(event) => setForm({ ...form, restaurant: event.target.value })} />
+              </label>
+              <label className="toggle-line wide">
+                <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />
+                {t(locale, 'active')}
+              </label>
+            </div>
+            <p className="muted">{t(locale, 'temporaryPasswordNotice')}</p>
+            <div className="modal-actions">
+              <button type="button" className="small-action neutral" onClick={() => setFormOpen(false)}>
+                {t(locale, 'cancel')}
+              </button>
+              <button type="submit" className="small-action" disabled={creating}>
+                <Save size={16} /> {creating ? t(locale, 'saving') : t(locale, 'createUser')}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {temporaryPassword && (
+        <div className="modal-overlay" role="presentation" onClick={() => setTemporaryPassword('')}>
+          <div className="item-form-card temp-password-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'temporaryPassword')} onClick={(event) => event.stopPropagation()}>
+            <div className="section-head">
+              <div>
+                <span className="eyebrow dark">{t(locale, 'temporaryPassword')}</span>
+                <h2>{t(locale, 'copyTemporaryPassword')}</h2>
+              </div>
+              <button type="button" className="ghost-icon dark" onClick={() => setTemporaryPassword('')} aria-label={t(locale, 'close')}>
+                x
+              </button>
+            </div>
+            <p className="muted">{t(locale, 'temporaryPasswordOnce')}</p>
+            <code className="temporary-password">{temporaryPassword}</code>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="small-action neutral"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(temporaryPassword);
+                }}
+              >
+                {t(locale, 'copy')}
+              </button>
+              <button type="button" className="small-action" onClick={() => setTemporaryPassword('')}>
+                {t(locale, 'done')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

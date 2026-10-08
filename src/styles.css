@@ -1394,6 +1394,25 @@ button {
   width: min(1080px, 100%);
 }
 
+.user-form-card,
+.temp-password-card {
+  width: min(760px, 100%);
+}
+
+.temporary-password {
+  display: block;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 50%);
+  border-radius: 16px;
+  color: var(--text);
+  background: #fbf8ff;
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-align: center;
+  word-break: break-all;
+}
+
 .empty-state {
   display: grid;
   min-height: 160px;
@@ -1562,7 +1581,7 @@ button {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 120px 1fr 100px auto;
+  grid-template-columns: 1fr 1.35fr 110px 1fr 100px 130px auto;
   gap: 8px;
   align-items: center;
 }

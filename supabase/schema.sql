@@ -29,6 +29,9 @@ create table if not exists profiles (
   role text not null check (role in ('admin', 'owner')),
   restaurant_name text,
   active boolean default true,
+  must_change_password boolean default false,
+  temporary_password_issued_at timestamptz,
+  password_changed_at timestamptz,
   created_at timestamptz default now()
 );
 

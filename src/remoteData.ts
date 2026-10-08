@@ -156,11 +156,13 @@ async function loadPrivateRemoteState(restaurantId: string, itemMap: Map<string,
     ? fallback.users
     : (usersResult.data || []).map((user) => ({
         id: user.id,
+        authUserId: user.auth_user_id || undefined,
         name: user.name,
         email: user.email,
         role: user.role,
         restaurant: user.restaurant_name || '',
         active: Boolean(user.active),
+        mustChangePassword: Boolean(user.must_change_password),
       }));
 
   return { orders, users };
@@ -324,7 +326,38 @@ async function syncUsers(restaurantId: string, users: AppUser[], restaurantName:
     role: user.role,
     restaurant_name: user.restaurant || restaurantName,
     active: user.active,
+    must_change_password: Boolean(user.mustChangePassword),
   }));
   if (rows.length) await supabase.from('profiles').upsert(rows);
   await deleteMissing('profiles', restaurantId, users.map((user) => user.id));
+}
+
+export interface AdminUserPayload {
+  name: string;
+  email: string;
+  role: AppUser['role'];
+  restaurant: string;
+  active: boolean;
+}
+
+export async function createAdminUser(payload: AdminUserPayload) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.functions.invoke('admin-create-user', { body: payload });
+  if (error) throw error;
+  if (!data?.user || !data?.temporaryPassword) throw new Error('User function returned an invalid response.');
+  return data as { user: AppUser; temporaryPassword: string };
+}
+
+export async function resetAdminUserPassword(profileId: string) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.functions.invoke('admin-reset-password', { body: { profileId } });
+  if (error) throw error;
+  if (!data?.temporaryPassword) throw new Error('Reset function returned an invalid response.');
+  return data as { profileId: string; temporaryPassword: string };
+}
+
+export async function completeTemporaryPasswordChange() {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.functions.invoke('complete-password-change', { body: {} });
+  if (error) throw error;
 }
