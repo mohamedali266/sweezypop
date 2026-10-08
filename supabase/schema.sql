@@ -17,6 +17,7 @@ create table if not exists restaurants (
   button_text_color text default '#ffffff',
   card_color text default '#ffffff',
   border_color text default '#eadff0',
+  menu_layout text default 'grid' check (menu_layout in ('grid', 'list')),
   created_at timestamptz default now()
 );
 

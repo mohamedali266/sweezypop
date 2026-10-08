@@ -1,4 +1,4 @@
-import type { AppUser, Category, MenuItem, OpeningHour, Order, ThemeSettings } from './types';
+import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -8,6 +8,7 @@ export interface RemoteState {
   users: AppUser[];
   theme: ThemeSettings;
   hours: OpeningHour[];
+  layout: MenuLayout;
 }
 
 const restaurantSlug = import.meta.env.VITE_RESTAURANT_SLUG || 'sweezypop';
@@ -28,6 +29,7 @@ type DbRestaurant = {
   button_text_color: string | null;
   card_color: string | null;
   border_color: string | null;
+  menu_layout?: string | null;
 };
 
 function appId(prefix: string, id: string) {
@@ -75,6 +77,10 @@ function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): T
     card: restaurant.card_color || fallback.card,
     border: restaurant.border_color || fallback.border,
   };
+}
+
+function restaurantToLayout(restaurant: DbRestaurant, fallback: MenuLayout): MenuLayout {
+  return restaurant.menu_layout === 'list' || restaurant.menu_layout === 'grid' ? restaurant.menu_layout : fallback;
 }
 
 async function getRestaurant() {
@@ -140,6 +146,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
     orders: privateState.orders,
     users: privateState.users,
     theme: restaurantToTheme(restaurant, fallback.theme),
+    layout: restaurantToLayout(restaurant, fallback.layout),
   };
 }
 
@@ -219,6 +226,11 @@ export async function saveRemoteState(state: RemoteState) {
       border_color: state.theme.border,
     })
     .eq('id', restaurantId);
+
+  const { error: layoutError } = await supabase.from('restaurants').update({ menu_layout: state.layout }).eq('id', restaurantId);
+  if (layoutError && layoutError.code !== 'PGRST204') {
+    throw layoutError;
+  }
 
   await syncCategories(restaurantId, state.categories);
   await syncMenuItems(restaurantId, state.items);

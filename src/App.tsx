@@ -202,7 +202,7 @@ function App() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    const fallback: RemoteState = { categories, items, orders, users, theme, hours };
+    const fallback: RemoteState = { categories, items, orders, users, theme, hours, layout };
     loadRemoteState(fallback)
       .then((remoteState) => {
         if (!remoteState) return;
@@ -212,6 +212,7 @@ function App() {
         setUsers(remoteState.users);
         setTheme(remoteState.theme);
         setHours(remoteState.hours);
+        setLayout(remoteState.layout);
       })
       .catch((error: unknown) => {
         console.warn('Supabase load failed. Using local demo data.', error);
@@ -227,6 +228,12 @@ function App() {
   }, [theme.menuUrl]);
 
   useEffect(() => {
+    if (!submittedOrderId) return;
+    const successTimer = window.setTimeout(() => setSubmittedOrderId(''), 5000);
+    return () => window.clearTimeout(successTimer);
+  }, [submittedOrderId]);
+
+  useEffect(() => {
     if (activeCategory === 'all') return;
     if (!categories.some((category) => category.id === activeCategory)) {
       setActiveCategory('all');
@@ -236,13 +243,13 @@ function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || !remoteReady || !authRole) return;
     const syncId = window.setTimeout(() => {
-      saveRemoteState({ categories, items, orders, users, theme, hours }).catch((error: unknown) => {
+      saveRemoteState({ categories, items, orders, users, theme, hours, layout }).catch((error: unknown) => {
         console.warn('Supabase save failed. Check auth, RLS policies, and env variables.', error);
       });
     }, 900);
 
     return () => window.clearTimeout(syncId);
-  }, [authRole, categories, hours, items, orders, remoteReady, theme, users]);
+  }, [authRole, categories, hours, items, layout, orders, remoteReady, theme, users]);
 
   const addToCart = (item: MenuItem) => {
     setSubmittedOrderId('');
@@ -307,7 +314,7 @@ function App() {
 
       if (profileError) return `${t(locale, 'loginNoProfile')} (${profileError.message})`;
       if (!profile) return `${t(locale, 'loginNoProfile')} User id: ${data.user.id}`;
-      const remoteState = await loadRemoteState({ categories, items, orders, users, theme, hours });
+      const remoteState = await loadRemoteState({ categories, items, orders, users, theme, hours, layout });
       if (remoteState) {
         setCategories(remoteState.categories);
         setItems(remoteState.items);
@@ -315,6 +322,7 @@ function App() {
         setUsers(remoteState.users);
         setTheme(remoteState.theme);
         setHours(remoteState.hours);
+        setLayout(remoteState.layout);
       }
       setAuthRole(profile.role);
       setView(profile.must_change_password ? 'password-change' : profile.role);
@@ -361,7 +369,6 @@ function App() {
         <MenuPage
           locale={locale}
           layout={layout}
-          setLayout={setLayout}
           items={items}
           categories={categories}
           hours={hours}
@@ -575,7 +582,6 @@ function PasswordChangePage({ locale, theme, onComplete, onLogout }: { locale: L
 function MenuPage(props: {
   locale: Locale;
   layout: MenuLayout;
-  setLayout: (layout: MenuLayout) => void;
   items: MenuItem[];
   categories: Category[];
   hours: OpeningHour[];
@@ -629,7 +635,6 @@ function MenuPage(props: {
           <Search size={18} />
           <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder={t(props.locale, 'search')} />
         </label>
-        <LayoutToggle locale={props.locale} layout={props.layout} setLayout={props.setLayout} />
       </section>
 
       <section className="category-rail" aria-label={t(props.locale, 'categories')}>
