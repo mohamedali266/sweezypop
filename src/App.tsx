@@ -47,6 +47,12 @@ type DashboardSection = 'overview' | 'items' | 'categories' | 'offers' | 'appear
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'qr';
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
+const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
+
+function itemDescription(item: MenuItem, locale: Locale) {
+  return item.description[locale].split('__offer_meta__:')[0].trim();
+}
+
 const storageKeys = {
   layout: 'sweezypop.layout',
   items: 'sweezypop.items',
@@ -561,9 +567,9 @@ function MenuPage(props: {
   }, [props.activeCategory, props.items, props.locale, props.query]);
 
   const today = props.hours.find((hour) => hour.enabled);
-  const featuredOffers = props.items.filter((item) => item.available && item.categoryId === 'offers').sort((a, b) => a.sortOrder - b.sortOrder);
+  const featuredOffers = props.items.filter((item) => item.available && isOfferItem(item)).sort((a, b) => a.sortOrder - b.sortOrder);
   const showFeaturedOffers = featuredOffers.length > 0 && (props.activeCategory === 'all' || props.activeCategory === 'offers');
-  const visibleMenuItems = props.activeCategory === 'all' ? filtered.filter((item) => item.categoryId !== 'offers') : props.activeCategory === 'offers' ? [] : filtered;
+  const visibleMenuItems = props.activeCategory === 'all' ? filtered.filter((item) => !isOfferItem(item)) : props.activeCategory === 'offers' ? [] : filtered;
 
   return (
     <main className="menu-shell">
@@ -607,7 +613,7 @@ function MenuPage(props: {
           ))}
       </section>
 
-      {showFeaturedOffers && <FeaturedOffers offers={featuredOffers} locale={props.locale} onAdd={props.addToCart} />}
+      {showFeaturedOffers && <FeaturedOffers offers={featuredOffers} items={props.items} locale={props.locale} onAdd={props.addToCart} />}
 
       <div className="menu-content single-column">
         <section id="menu-list" className={`items ${props.layout}`}>
@@ -628,7 +634,9 @@ function MenuPage(props: {
   );
 }
 
-function FeaturedOffers({ offers, locale, onAdd }: { offers: MenuItem[]; locale: Locale; onAdd: (item: MenuItem) => void }) {
+function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; items: MenuItem[]; locale: Locale; onAdd: (item: MenuItem) => void }) {
+  const [selectedOffer, setSelectedOffer] = useState<MenuItem | null>(null);
+
   return (
     <section className="featured-offers" aria-label={t(locale, 'specialOffers')}>
       <div className="section-head">
@@ -640,10 +648,92 @@ function FeaturedOffers({ offers, locale, onAdd }: { offers: MenuItem[]; locale:
       </div>
       <div className="offer-menu-grid">
         {offers.map((offer) => (
-          <MenuCard key={offer.id} item={offer} locale={locale} layout="grid" onAdd={onAdd} />
+          <OfferCard key={offer.id} offer={offer} locale={locale} onOpen={setSelectedOffer} />
         ))}
       </div>
+      {selectedOffer && <OfferDetailsModal offer={selectedOffer} items={items} locale={locale} onAdd={onAdd} onClose={() => setSelectedOffer(null)} />}
     </section>
+  );
+}
+
+function OfferCard({ offer, locale, onOpen }: { offer: MenuItem; locale: Locale; onOpen: (offer: MenuItem) => void }) {
+  return (
+    <button type="button" className="offer-card" onClick={() => onOpen(offer)}>
+      <div className={`offer-card-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
+        {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} loading="lazy" /> : <BadgeDollarSign size={38} />}
+        {offer.badge && <span>{offer.badge[locale]}</span>}
+      </div>
+      <div className="offer-card-body">
+        <div>
+          <h3>{offer.name[locale]}</h3>
+          <p>{itemDescription(offer, locale)}</p>
+        </div>
+        <strong>{currency.format(offer.price)}</strong>
+      </div>
+    </button>
+  );
+}
+
+function OfferDetailsModal({
+  offer,
+  items,
+  locale,
+  onAdd,
+  onClose,
+}: {
+  offer: MenuItem;
+  items: MenuItem[];
+  locale: Locale;
+  onAdd: (item: MenuItem) => void;
+  onClose: () => void;
+}) {
+  const includedItems = (offer.includedItemIds || [])
+    .map((id) => items.find((item) => item.id === id))
+    .filter((item): item is MenuItem => Boolean(item));
+
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <article className="offer-detail-card animated-panel" role="dialog" aria-modal="true" aria-label={offer.name[locale]} onClick={(event) => event.stopPropagation()}>
+        <div className={`offer-detail-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
+          {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} /> : <BadgeDollarSign size={48} />}
+          {offer.badge && <span>{offer.badge[locale]}</span>}
+        </div>
+        <div className="offer-detail-content">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow dark">{t(locale, 'specialOffers')}</span>
+              <h2>{offer.name[locale]}</h2>
+            </div>
+            <button type="button" className="ghost-icon dark" onClick={onClose} aria-label={t(locale, 'close')}>
+              x
+            </button>
+          </div>
+          <p className="muted">{itemDescription(offer, locale)}</p>
+          <div className="included-items-list">
+            <h3>{t(locale, 'includedItems')}</h3>
+            {includedItems.length ? (
+              includedItems.map((item) => (
+                <div key={item.id} className="included-offer-item">
+                  <div className={`selection-thumb food-art ${item.imageStyle} ${item.imageUrl ? 'has-image' : ''}`}>
+                    {item.imageUrl && <img src={item.imageUrl} alt="" />}
+                  </div>
+                  <span>{item.name[locale]}</span>
+                  <strong>{currency.format(item.price)}</strong>
+                </div>
+              ))
+            ) : (
+              <p className="muted">{t(locale, 'includedItemsUnavailable')}</p>
+            )}
+          </div>
+          <div className="offer-detail-footer">
+            <strong>{currency.format(offer.price)}</strong>
+            <button type="button" className="primary-action" onClick={() => onAdd(offer)}>
+              <Plus size={18} /> {t(locale, 'addToCart')}
+            </button>
+          </div>
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -656,7 +746,7 @@ function MenuCard({ item, locale, layout, onAdd }: { item: MenuItem; locale: Loc
       </div>
       <div className="menu-card-body">
         <h3>{item.name[locale]}</h3>
-        <p>{item.description[locale]}</p>
+        <p>{itemDescription(item, locale)}</p>
         <div className="card-footer">
           <strong>{currency.format(item.price)}</strong>
           <button aria-label={`${t(locale, 'addToCart')} ${item.name[locale]}`} onClick={() => onAdd(item)}>
@@ -858,8 +948,38 @@ function Dashboard(props: {
       imageUrl: payload.imageUrl.trim(),
       available: true,
       sortOrder: props.items.length + 1,
+      includedItemIds: payload.itemIds,
     };
     props.setItems([...props.items, offer]);
+  };
+
+  const updateOffer = (offerId: string, payload: { name: string; description: string; imageUrl: string; itemIds: string[]; price: number }) => {
+    const selected = props.items.filter((item) => payload.itemIds.includes(item.id));
+    props.setItems(
+      props.items.map((item) =>
+        item.id === offerId
+          ? {
+              ...item,
+              name: { en: payload.name, de: payload.name },
+              description: {
+                en: payload.description.trim() || selected.map((selectedItem) => selectedItem.name.en).join(' + '),
+                de: payload.description.trim() || selected.map((selectedItem) => selectedItem.name.de).join(' + '),
+              },
+              price: payload.price,
+              imageUrl: payload.imageUrl.trim(),
+              includedItemIds: payload.itemIds,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const toggleOfferAvailability = (offerId: string) => {
+    props.setItems(props.items.map((item) => (item.id === offerId ? { ...item, available: !item.available } : item)));
+  };
+
+  const deleteOffer = (offerId: string) => {
+    props.setItems(props.items.filter((item) => item.id !== offerId));
   };
 
   const importItemsFromExcel = async (file: File) => {
@@ -1022,7 +1142,14 @@ function Dashboard(props: {
           )}
 
           {activeSection === 'offers' && (
-            <OffersManager locale={props.locale} items={props.items} createOffer={createOffer} />
+            <OffersManager
+              locale={props.locale}
+              items={props.items}
+              createOffer={createOffer}
+              updateOffer={updateOffer}
+              toggleOfferAvailability={toggleOfferAvailability}
+              deleteOffer={deleteOffer}
+            />
           )}
 
           {activeSection === 'appearance' && (
@@ -1411,20 +1538,53 @@ function OffersManager({
   locale,
   items,
   createOffer,
+  updateOffer,
+  toggleOfferAvailability,
+  deleteOffer,
 }: {
   locale: Locale;
   items: MenuItem[];
   createOffer: (payload: { name: string; description: string; imageUrl: string; itemIds: string[]; price: number }) => void;
+  updateOffer: (offerId: string, payload: { name: string; description: string; imageUrl: string; itemIds: string[]; price: number }) => void;
+  toggleOfferAvailability: (offerId: string) => void;
+  deleteOffer: (offerId: string) => void;
 }) {
   const [formOpen, setFormOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState<MenuItem | null>(null);
   const [name, setName] = useState('Weekend Combo');
   const [description, setDescription] = useState('A curated offer built from your best menu items.');
   const [imageUrl, setImageUrl] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [price, setPrice] = useState(12);
   const [error, setError] = useState('');
-  const availableItems = items.filter((item) => item.categoryId !== 'offers');
-  const publishedOffers = items.filter((item) => item.categoryId === 'offers');
+  const availableItems = items.filter((item) => !isOfferItem(item));
+  const publishedOffers = items.filter(isOfferItem);
+
+  const resetForm = () => {
+    setEditingOffer(null);
+    setName('Weekend Combo');
+    setDescription('A curated offer built from your best menu items.');
+    setImageUrl('');
+    setSelectedIds([]);
+    setPrice(12);
+    setError('');
+  };
+
+  const openCreateForm = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const openEditForm = (offer: MenuItem) => {
+    setEditingOffer(offer);
+    setName(offer.name[locale] || offer.name.en);
+    setDescription(itemDescription(offer, locale) || itemDescription(offer, 'en'));
+    setImageUrl(offer.imageUrl || '');
+    setSelectedIds(offer.includedItemIds || []);
+    setPrice(offer.price);
+    setError('');
+    setFormOpen(true);
+  };
 
   const toggleItem = (id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id]));
@@ -1458,10 +1618,12 @@ function OffersManager({
       return;
     }
 
-    createOffer({ name, description, imageUrl, itemIds: selectedIds, price });
-    setSelectedIds([]);
-    setImageUrl('');
-    setError('');
+    if (editingOffer) {
+      updateOffer(editingOffer.id, { name, description, imageUrl, itemIds: selectedIds, price });
+    } else {
+      createOffer({ name, description, imageUrl, itemIds: selectedIds, price });
+    }
+    resetForm();
     setFormOpen(false);
   };
 
@@ -1472,7 +1634,7 @@ function OffersManager({
           <h2>{t(locale, 'offers')}</h2>
           <p className="muted">{t(locale, 'offersCopy')}</p>
         </div>
-        <button className="small-action" onClick={() => setFormOpen(true)}>
+        <button className="small-action" onClick={openCreateForm}>
           <Plus size={16} /> {t(locale, 'createOffer')}
         </button>
       </div>
@@ -1483,9 +1645,35 @@ function OffersManager({
           <span className="count-pill">{publishedOffers.length}</span>
         </div>
         {publishedOffers.length ? (
-          <div className="offer-menu-grid">
+          <div className="admin-offers-grid">
             {publishedOffers.map((offer) => (
-              <MenuCard key={offer.id} item={offer} locale={locale} layout="grid" onAdd={() => undefined} />
+              <article key={offer.id} className={`admin-offer-card ${offer.available ? '' : 'paused'}`}>
+                <div className={`admin-offer-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
+                  {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} /> : <BadgeDollarSign size={34} />}
+                  <span>{offer.available ? t(locale, 'active') : t(locale, 'inactive')}</span>
+                </div>
+                <div className="admin-offer-body">
+                  <div>
+                    <h3>{offer.name[locale]}</h3>
+                    <p>{itemDescription(offer, locale)}</p>
+                  </div>
+                  <div className="admin-offer-meta">
+                    <strong>{currency.format(offer.price)}</strong>
+                    <span>{(offer.includedItemIds || []).length} {t(locale, 'items')}</span>
+                  </div>
+                  <div className="admin-offer-actions">
+                    <button type="button" className="small-action neutral" onClick={() => openEditForm(offer)}>
+                      {t(locale, 'edit')}
+                    </button>
+                    <button type="button" className="small-action neutral" onClick={() => toggleOfferAvailability(offer.id)}>
+                      {offer.available ? t(locale, 'pauseOffer') : t(locale, 'publishOffer')}
+                    </button>
+                    <button type="button" className="small-action danger" onClick={() => deleteOffer(offer.id)}>
+                      <Trash2 size={15} /> {t(locale, 'delete')}
+                    </button>
+                  </div>
+                </div>
+              </article>
             ))}
           </div>
         ) : (
@@ -1495,11 +1683,11 @@ function OffersManager({
 
       {formOpen && (
         <div className="modal-overlay" role="presentation" onClick={() => setFormOpen(false)}>
-          <div className="item-form-card offer-modal-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'createOffer')} onClick={(event) => event.stopPropagation()}>
+          <div className="item-form-card offer-modal-card animated-panel" role="dialog" aria-modal="true" aria-label={editingOffer ? t(locale, 'editOffer') : t(locale, 'createOffer')} onClick={(event) => event.stopPropagation()}>
             <div className="section-head">
               <div>
                 <span className="eyebrow dark">{t(locale, 'offers')}</span>
-                <h2>{t(locale, 'createOffer')}</h2>
+                <h2>{editingOffer ? t(locale, 'editOffer') : t(locale, 'createOffer')}</h2>
               </div>
               <button type="button" className="ghost-icon dark" onClick={() => setFormOpen(false)} aria-label={t(locale, 'close')}>
                 x

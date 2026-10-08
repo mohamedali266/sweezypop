@@ -34,6 +34,29 @@ function appId(prefix: string, id: string) {
   return `${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)}`;
 }
 
+const offerMetaPrefix = '__offer_meta__:';
+
+function readOfferDescription(descriptionDe: string | null) {
+  const value = descriptionDe || '';
+  const [description, meta] = value.split(offerMetaPrefix);
+  if (!meta) return { descriptionDe: value, includedItemIds: [] };
+
+  try {
+    const parsed = JSON.parse(meta.trim()) as { includedItemIds?: string[] };
+    return {
+      descriptionDe: description.trim(),
+      includedItemIds: Array.isArray(parsed.includedItemIds) ? parsed.includedItemIds : [],
+    };
+  } catch {
+    return { descriptionDe: description.trim(), includedItemIds: [] };
+  }
+}
+
+function writeOfferDescription(item: MenuItem) {
+  if (item.categoryId !== 'offers' || !item.includedItemIds?.length) return item.description.de;
+  return `${item.description.de || item.description.en}\n${offerMetaPrefix}${JSON.stringify({ includedItemIds: item.includedItemIds })}`;
+}
+
 function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): ThemeSettings {
   return {
     ...fallback,
@@ -83,18 +106,22 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
     sortOrder: category.sort_order || 0,
   }));
 
-  const items: MenuItem[] = (itemsResult.data || []).map((item) => ({
-    id: item.id,
-    categoryId: item.category_id,
-    name: { en: item.name_en, de: item.name_de },
-    description: { en: item.description_en || '', de: item.description_de || '' },
-    price: Number(item.price || 0),
-    badge: item.badge_en || item.badge_de ? { en: item.badge_en || '', de: item.badge_de || item.badge_en || '' } : undefined,
-    imageStyle: item.image_style || 'pink',
-    imageUrl: item.image_url || '',
-    available: Boolean(item.available),
-    sortOrder: item.sort_order || 0,
-  }));
+  const items: MenuItem[] = (itemsResult.data || []).map((item) => {
+    const offerDescription = readOfferDescription(item.description_de);
+    return {
+      id: item.id,
+      categoryId: item.category_id,
+      name: { en: item.name_en, de: item.name_de },
+      description: { en: item.description_en || '', de: offerDescription.descriptionDe },
+      price: Number(item.price || 0),
+      badge: item.badge_en || item.badge_de ? { en: item.badge_en || '', de: item.badge_de || item.badge_en || '' } : undefined,
+      imageStyle: item.image_style || 'pink',
+      imageUrl: item.image_url || '',
+      available: Boolean(item.available),
+      sortOrder: item.sort_order || 0,
+      includedItemIds: offerDescription.includedItemIds,
+    };
+  });
 
   const itemMap = new Map(items.map((item) => [item.id, item]));
   const privateState = await loadPrivateRemoteState(restaurantId, itemMap, fallback);
@@ -258,7 +285,7 @@ async function syncMenuItems(restaurantId: string, items: MenuItem[]) {
     name_en: item.name.en,
     name_de: item.name.de,
     description_en: item.description.en,
-    description_de: item.description.de,
+    description_de: writeOfferDescription(item),
     price: item.price,
     badge_en: item.badge?.en || null,
     badge_de: item.badge?.de || null,

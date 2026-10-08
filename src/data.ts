@@ -102,6 +102,7 @@ export const menuItems: MenuItem[] = [
     imageStyle: 'combo',
     available: true,
     sortOrder: 1,
+    includedItemIds: ['lotus-jar', 'mochi-box', 'rose-milk', 'iced-matcha'],
   },
 ];
 

@@ -20,6 +20,7 @@ export interface MenuItem {
   imageUrl?: string;
   available: boolean;
   sortOrder: number;
+  includedItemIds?: string[];
 }
 
 export interface CartLine {
