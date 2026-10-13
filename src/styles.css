@@ -55,6 +55,29 @@ button {
   height: auto;
 }
 
+.app-fallback {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  padding: 24px;
+  color: #211b33;
+  text-align: center;
+  background: #fff7fb;
+}
+
+.app-fallback h1,
+.app-fallback p {
+  margin: 0;
+}
+
+.app-fallback p {
+  max-width: 520px;
+  color: #756a80;
+  line-height: 1.6;
+}
+
 @keyframes loader-fade {
   to {
     opacity: 0;
@@ -360,6 +383,64 @@ button {
   border-radius: 14px;
   color: var(--button-text);
   background: var(--accent);
+}
+
+.social-mini-icons {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.social-mini-icons .social-app-icon + .social-app-icon {
+  margin-left: -10px;
+}
+
+.social-app-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 3px solid white;
+  border-radius: 14px;
+  color: white;
+  background: #211b33;
+  box-shadow: 0 12px 24px rgba(33, 27, 51, 0.14);
+  font-size: 0.82rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.social-app-icon.instagram {
+  background: linear-gradient(135deg, #feda75, #d62976 48%, #4f5bd5);
+}
+
+.social-app-icon.facebook {
+  background: #1877f2;
+  font-family: Georgia, serif;
+  font-size: 1.6rem;
+}
+
+.social-app-icon.tiktok {
+  background: #050505;
+  color: #25f4ee;
+  text-shadow: 2px 1px 0 #fe2c55;
+  font-size: 1.4rem;
+}
+
+.social-app-icon.youtube {
+  background: #ff0033;
+}
+
+.social-app-icon.whatsapp {
+  background: #25d366;
+}
+
+.social-app-icon.linkedin {
+  background: #0a66c2;
+}
+
+.social-app-icon.x {
+  background: #000;
 }
 
 .phone-strip {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, DragEvent, FormEvent } from 'react';
+import { Component, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from 'react';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import {
@@ -24,7 +24,6 @@ import {
   Search,
   Save,
   Settings,
-  Share2,
   ShoppingBag,
   Trash2,
   UsersRound,
@@ -97,14 +96,50 @@ function saveStored(key: string, value: unknown) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-function normalizeThemeSettings(value: ThemeSettings): ThemeSettings {
+function safeArray<T>(value: unknown, fallback: T[]): T[] {
+  return Array.isArray(value) ? (value as T[]) : fallback;
+}
+
+function normalizeLayout(value: unknown): MenuLayout {
+  return value === 'list' || value === 'grid' ? value : 'grid';
+}
+
+function normalizeThemeSettings(value: unknown): ThemeSettings {
+  const theme = value && typeof value === 'object' ? (value as Partial<ThemeSettings>) : {};
   return {
     ...defaultTheme,
-    ...value,
-    socialLinks: Array.isArray(value.socialLinks) ? value.socialLinks : defaultTheme.socialLinks,
-    phoneCountryCode: value.phoneCountryCode || defaultTheme.phoneCountryCode,
-    phoneNumber: value.phoneNumber || '',
+    ...theme,
+    socialLinks: Array.isArray(theme.socialLinks) ? theme.socialLinks : defaultTheme.socialLinks,
+    phoneCountryCode: theme.phoneCountryCode || defaultTheme.phoneCountryCode,
+    phoneNumber: theme.phoneNumber || '',
   };
+}
+
+function socialPlatformKind(link: SocialLink) {
+  const value = `${link.label} ${link.url}`.toLowerCase();
+  if (value.includes('instagram')) return 'instagram';
+  if (value.includes('facebook') || value.includes('fb.com')) return 'facebook';
+  if (value.includes('tiktok')) return 'tiktok';
+  if (value.includes('youtube') || value.includes('youtu.be')) return 'youtube';
+  if (value.includes('whatsapp') || value.includes('wa.me')) return 'whatsapp';
+  if (value.includes('linkedin')) return 'linkedin';
+  if (value.includes('x.com') || value.includes('twitter')) return 'x';
+  return 'website';
+}
+
+function SocialAppIcon({ link }: { link: SocialLink }) {
+  const kind = socialPlatformKind(link);
+  const glyphs: Record<string, string> = {
+    instagram: 'IG',
+    facebook: 'f',
+    tiktok: '♪',
+    youtube: '▶',
+    whatsapp: 'WA',
+    linkedin: 'in',
+    x: 'X',
+    website: '↗',
+  };
+  return <span className={`social-app-icon ${kind}`}>{glyphs[kind]}</span>;
 }
 
 function BrandMark({ theme }: { theme: ThemeSettings }) {
@@ -161,17 +196,17 @@ async function readMenuRowsFromWorkbook(file: File) {
   );
 }
 
-function App() {
+function AppContent() {
   const [view, setView] = useState<View>('menu');
   const [showLoader, setShowLoader] = useState(true);
   const [locale, setLocale] = useState<Locale>('en');
-  const [layout, setLayout] = useState<MenuLayout>(() => loadStored(storageKeys.layout, 'grid'));
-  const [items, setItems] = useState<MenuItem[]>(() => loadStored(storageKeys.items, seedItems));
-  const [categories, setCategories] = useState<Category[]>(() => loadStored(storageKeys.categories, seedCategories));
-  const [orders, setOrders] = useState<Order[]>(() => loadStored(storageKeys.orders, initialOrders));
-  const [users, setUsers] = useState<AppUser[]>(() => loadStored(storageKeys.users, seedUsers));
+  const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
+  const [items, setItems] = useState<MenuItem[]>(() => safeArray(loadStored(storageKeys.items, seedItems), seedItems));
+  const [categories, setCategories] = useState<Category[]>(() => safeArray(loadStored(storageKeys.categories, seedCategories), seedCategories));
+  const [orders, setOrders] = useState<Order[]>(() => safeArray(loadStored(storageKeys.orders, initialOrders), initialOrders));
+  const [users, setUsers] = useState<AppUser[]>(() => safeArray(loadStored(storageKeys.users, seedUsers), seedUsers));
   const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
-  const [hours, setHours] = useState<OpeningHour[]>(() => loadStored(storageKeys.hours, seedHours));
+  const [hours, setHours] = useState<OpeningHour[]>(() => safeArray(loadStored(storageKeys.hours, seedHours), seedHours));
   const [activeCategory, setActiveCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -209,13 +244,13 @@ function App() {
       if (!event.key || !event.newValue) return;
       try {
         const value = JSON.parse(event.newValue);
-        if (event.key === storageKeys.items) setItems(value);
-        if (event.key === storageKeys.categories) setCategories(value);
-        if (event.key === storageKeys.orders) setOrders(value);
-        if (event.key === storageKeys.users) setUsers(value);
+        if (event.key === storageKeys.items) setItems(safeArray(value, seedItems));
+        if (event.key === storageKeys.categories) setCategories(safeArray(value, seedCategories));
+        if (event.key === storageKeys.orders) setOrders(safeArray(value, initialOrders));
+        if (event.key === storageKeys.users) setUsers(safeArray(value, seedUsers));
         if (event.key === storageKeys.theme) setTheme(normalizeThemeSettings(value));
-        if (event.key === storageKeys.hours) setHours(value);
-        if (event.key === storageKeys.layout) setLayout(value);
+        if (event.key === storageKeys.hours) setHours(safeArray(value, seedHours));
+        if (event.key === storageKeys.layout) setLayout(normalizeLayout(value));
       } catch {
         // Ignore malformed external storage writes.
       }
@@ -226,17 +261,17 @@ function App() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    const fallback: RemoteState = { categories, items, orders, users, theme, hours, layout };
+    const fallback: RemoteState = { categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout };
     loadRemoteState(fallback)
       .then((remoteState) => {
         if (!remoteState) return;
-        setCategories(remoteState.categories);
-        setItems(remoteState.items);
-        setOrders(remoteState.orders);
-        setUsers(remoteState.users);
+        setCategories(safeArray(remoteState.categories, seedCategories));
+        setItems(safeArray(remoteState.items, seedItems));
+        setOrders(safeArray(remoteState.orders, initialOrders));
+        setUsers(safeArray(remoteState.users, seedUsers));
         setTheme(normalizeThemeSettings(remoteState.theme));
-        setHours(remoteState.hours);
-        setLayout(remoteState.layout);
+        setHours(safeArray(remoteState.hours, seedHours));
+        setLayout(normalizeLayout(remoteState.layout));
       })
       .catch((error: unknown) => {
         console.warn('Supabase load failed. Using local demo data.', error);
@@ -348,15 +383,15 @@ function App() {
 
       if (profileError) return `${t(locale, 'loginNoProfile')} (${profileError.message})`;
       if (!profile) return `${t(locale, 'loginNoProfile')} User id: ${data.user.id}`;
-      const remoteState = await loadRemoteState({ categories, items, orders, users, theme, hours, layout });
+      const remoteState = await loadRemoteState({ categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
       if (remoteState) {
-        setCategories(remoteState.categories);
-        setItems(remoteState.items);
-        setOrders(remoteState.orders);
-        setUsers(remoteState.users);
+        setCategories(safeArray(remoteState.categories, seedCategories));
+        setItems(safeArray(remoteState.items, seedItems));
+        setOrders(safeArray(remoteState.orders, initialOrders));
+        setUsers(safeArray(remoteState.users, seedUsers));
         setTheme(normalizeThemeSettings(remoteState.theme));
-        setHours(remoteState.hours);
-        setLayout(remoteState.layout);
+        setHours(safeArray(remoteState.hours, seedHours));
+        setLayout(normalizeLayout(remoteState.layout));
       }
       setAuthRole(profile.role);
       setView(profile.must_change_password ? 'password-change' : profile.role);
@@ -444,6 +479,52 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Sweezypop render guard caught an error.', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="app-fallback" role="alert">
+          <BrandMark theme={defaultTheme} />
+          <h1>Sweezypop</h1>
+          <p>The menu could not render with the current browser data. Refreshing usually restores the latest safe version.</p>
+          <button
+            className="primary-action"
+            onClick={() => {
+              window.localStorage.removeItem(storageKeys.theme);
+              window.location.reload();
+            }}
+          >
+            Reload menu
+          </button>
+        </main>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
   );
 }
 
@@ -725,8 +806,10 @@ function ContactStrip({ locale, theme }: { locale: Locale; theme: ThemeSettings 
     <section className="contact-strip" aria-label={t(locale, 'contactAndSocial')}>
       {activeLinks.length ? (
         <button type="button" className="social-trigger" onClick={() => setSocialOpen(true)}>
-          <span className="contact-icon">
-            <Share2 size={18} />
+          <span className="social-mini-icons" aria-hidden="true">
+            {activeLinks.slice(0, 3).map((link) => (
+              <SocialAppIcon key={link.id} link={link} />
+            ))}
           </span>
           <span>
             <strong>{t(locale, 'socialMedia')}</strong>
@@ -774,9 +857,7 @@ function SocialLinksModal({ locale, links, onClose }: { locale: Locale; links: S
         <div className="social-link-list">
           {links.map((link) => (
             <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="social-link-card">
-              <span className="contact-icon">
-                <Share2 size={18} />
-              </span>
+              <SocialAppIcon link={link} />
               <strong>{link.label}</strong>
             </a>
           ))}
@@ -2160,7 +2241,7 @@ function AppearanceSettings({
   );
 }
 
-function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+function StatCard({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
   return (
     <article className="stat-card">
       <div className="stat-icon">{icon}</div>
