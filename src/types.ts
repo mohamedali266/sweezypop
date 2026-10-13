@@ -42,6 +42,7 @@ export interface Order {
 
 export interface SocialLink {
   id: string;
+  platform?: string;
   label: string;
   url: string;
   active: boolean;

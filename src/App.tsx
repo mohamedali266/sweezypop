@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from 'react';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -52,6 +52,17 @@ type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
+const socialPlatformOptions = [
+  { value: 'instagram', label: 'Instagram', iconSlug: 'instagram' },
+  { value: 'facebook', label: 'Facebook', iconSlug: 'facebook' },
+  { value: 'tiktok', label: 'TikTok', iconSlug: 'tiktok' },
+  { value: 'youtube', label: 'YouTube', iconSlug: 'youtube' },
+  { value: 'whatsapp', label: 'WhatsApp', iconSlug: 'whatsapp' },
+  { value: 'linkedin', label: 'LinkedIn', iconSlug: 'linkedin' },
+  { value: 'x', label: 'X', iconSlug: 'x' },
+  { value: 'custom', label: 'Custom', iconSlug: '' },
+] as const;
+const socialPlatforms = new Map(socialPlatformOptions.map((platform) => [platform.value, platform]));
 
 function itemDescription(item: MenuItem, locale: Locale) {
   return item.description[locale].split('__offer_meta__:')[0].trim();
@@ -80,6 +91,7 @@ const storageKeys = {
   users: 'sweezypop.users',
   theme: 'sweezypop.theme',
   hours: 'sweezypop.hours',
+  dashboardView: 'sweezypop.dashboardView',
 } as const;
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -109,13 +121,19 @@ function normalizeThemeSettings(value: unknown): ThemeSettings {
   return {
     ...defaultTheme,
     ...theme,
-    socialLinks: Array.isArray(theme.socialLinks) ? theme.socialLinks : defaultTheme.socialLinks,
+    socialLinks: Array.isArray(theme.socialLinks)
+      ? theme.socialLinks.map((link) => ({
+          ...link,
+          platform: link.platform || socialPlatformKind(link),
+        }))
+      : defaultTheme.socialLinks,
     phoneCountryCode: theme.phoneCountryCode || defaultTheme.phoneCountryCode,
     phoneNumber: theme.phoneNumber || '',
   };
 }
 
 function socialPlatformKind(link: SocialLink) {
+  if (link.platform && socialPlatforms.has(link.platform as (typeof socialPlatformOptions)[number]['value'])) return link.platform;
   const value = `${link.label} ${link.url}`.toLowerCase();
   if (value.includes('instagram')) return 'instagram';
   if (value.includes('facebook') || value.includes('fb.com')) return 'facebook';
@@ -124,22 +142,20 @@ function socialPlatformKind(link: SocialLink) {
   if (value.includes('whatsapp') || value.includes('wa.me')) return 'whatsapp';
   if (value.includes('linkedin')) return 'linkedin';
   if (value.includes('x.com') || value.includes('twitter')) return 'x';
-  return 'website';
+  return 'custom';
 }
 
 function SocialAppIcon({ link }: { link: SocialLink }) {
   const kind = socialPlatformKind(link);
-  const glyphs: Record<string, string> = {
-    instagram: 'IG',
-    facebook: 'f',
-    tiktok: '♪',
-    youtube: '▶',
-    whatsapp: 'WA',
-    linkedin: 'in',
-    x: 'X',
-    website: '↗',
-  };
-  return <span className={`social-app-icon ${kind}`}>{glyphs[kind]}</span>;
+  const platform = socialPlatforms.get(kind as (typeof socialPlatformOptions)[number]['value']);
+  if (platform?.iconSlug) {
+    return (
+      <span className={`social-app-icon ${kind}`}>
+        <img src={`https://cdn.simpleicons.org/${platform.iconSlug}`} alt="" loading="lazy" />
+      </span>
+    );
+  }
+  return <span className="social-app-icon website">↗</span>;
 }
 
 function BrandMark({ theme }: { theme: ThemeSettings }) {
@@ -213,10 +229,52 @@ function AppContent() {
   const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(null);
   const [submittedOrderId, setSubmittedOrderId] = useState('');
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const touchStartY = useRef<number | null>(null);
+
+  const applyRemoteState = (remoteState: RemoteState) => {
+    setCategories(safeArray(remoteState.categories, seedCategories));
+    setItems(safeArray(remoteState.items, seedItems));
+    setOrders(safeArray(remoteState.orders, initialOrders));
+    setUsers(safeArray(remoteState.users, seedUsers));
+    setTheme(normalizeThemeSettings(remoteState.theme));
+    setHours(safeArray(remoteState.hours, seedHours));
+    setLayout(normalizeLayout(remoteState.layout));
+  };
+
+  const restoreDashboardSession = async () => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const { data: sessionResult } = await supabase.auth.getSession();
+    const user = sessionResult.session?.user;
+    if (!user) return;
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', user.id)
+      .eq('active', true)
+      .maybeSingle();
+
+    if (profileError || !profile) return;
+
+    const remoteState = await loadRemoteState({ categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
+    if (remoteState) applyRemoteState(remoteState);
+
+    setAuthRole(profile.role);
+    const storedView = loadStored<View>(storageKeys.dashboardView, profile.role);
+    setView(profile.must_change_password ? 'password-change' : storedView === 'admin' || storedView === 'owner' ? storedView : profile.role);
+  };
 
   useEffect(() => {
     const loaderTimer = window.setTimeout(() => setShowLoader(false), 3000);
     return () => window.clearTimeout(loaderTimer);
+  }, []);
+
+  useEffect(() => {
+    void restoreDashboardSession();
+    // Restore the persisted Supabase session once on boot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -238,6 +296,53 @@ function AppContent() {
   useEffect(() => saveStored(storageKeys.users, users), [users]);
   useEffect(() => saveStored(storageKeys.theme, theme), [theme]);
   useEffect(() => saveStored(storageKeys.hours, hours), [hours]);
+  useEffect(() => {
+    if (authRole && (view === 'owner' || view === 'admin')) {
+      saveStored(storageKeys.dashboardView, view);
+    }
+  }, [authRole, view]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+    if (!isTouchDevice) return;
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (window.scrollY <= 0) {
+        touchStartY.current = event.touches[0]?.clientY ?? null;
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (touchStartY.current === null || window.scrollY > 0 || refreshing) return;
+      const currentY = event.touches[0]?.clientY ?? touchStartY.current;
+      const delta = currentY - touchStartY.current;
+      if (delta <= 0) return;
+      if (delta > 8) event.preventDefault();
+      setPullDistance(Math.min(104, delta * 0.55));
+    };
+
+    const onTouchEnd = () => {
+      if (pullDistance > 76) {
+        setRefreshing(true);
+        window.setTimeout(() => window.location.reload(), 220);
+      } else {
+        setPullDistance(0);
+      }
+      touchStartY.current = null;
+    };
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [pullDistance, refreshing]);
 
   useEffect(() => {
     const syncStoredData = (event: StorageEvent) => {
@@ -265,13 +370,7 @@ function AppContent() {
     loadRemoteState(fallback)
       .then((remoteState) => {
         if (!remoteState) return;
-        setCategories(safeArray(remoteState.categories, seedCategories));
-        setItems(safeArray(remoteState.items, seedItems));
-        setOrders(safeArray(remoteState.orders, initialOrders));
-        setUsers(safeArray(remoteState.users, seedUsers));
-        setTheme(normalizeThemeSettings(remoteState.theme));
-        setHours(safeArray(remoteState.hours, seedHours));
-        setLayout(normalizeLayout(remoteState.layout));
+        applyRemoteState(remoteState);
       })
       .catch((error: unknown) => {
         console.warn('Supabase load failed. Using local demo data.', error);
@@ -385,16 +484,11 @@ function AppContent() {
       if (!profile) return `${t(locale, 'loginNoProfile')} User id: ${data.user.id}`;
       const remoteState = await loadRemoteState({ categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
       if (remoteState) {
-        setCategories(safeArray(remoteState.categories, seedCategories));
-        setItems(safeArray(remoteState.items, seedItems));
-        setOrders(safeArray(remoteState.orders, initialOrders));
-        setUsers(safeArray(remoteState.users, seedUsers));
-        setTheme(normalizeThemeSettings(remoteState.theme));
-        setHours(safeArray(remoteState.hours, seedHours));
-        setLayout(normalizeLayout(remoteState.layout));
+        applyRemoteState(remoteState);
       }
       setAuthRole(profile.role);
       setView(profile.must_change_password ? 'password-change' : profile.role);
+      saveStored(storageKeys.dashboardView, profile.role);
       window.history.replaceState(null, '', window.location.pathname);
       return null;
     }
@@ -403,6 +497,7 @@ function AppContent() {
     const role = matchedUser?.role || (email.toLowerCase().includes('admin') ? 'admin' : 'owner');
     setAuthRole(role);
     setView(role);
+    saveStored(storageKeys.dashboardView, role);
     window.history.replaceState(null, '', window.location.pathname);
     return null;
   };
@@ -411,6 +506,7 @@ function AppContent() {
     if (supabase) void supabase.auth.signOut();
     setAuthRole(null);
     setView('menu');
+    window.localStorage.removeItem(storageKeys.dashboardView);
     window.history.replaceState(null, '', window.location.pathname);
   };
 
@@ -433,6 +529,7 @@ function AppContent() {
       }
     >
       {showLoader && <LoaderScreen />}
+      <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
       <TopNav view={view} setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
       {view === 'menu' ? (
         <MenuPage
@@ -532,6 +629,17 @@ function LoaderScreen() {
   return (
     <div className="app-loader" role="status" aria-label="Loading Sweezypop">
       <img src="/sweezypop-loader-v3.svg" alt="SweezyPop by Ammaro" />
+    </div>
+  );
+}
+
+function PullToRefreshIndicator({ distance, refreshing }: { distance: number; refreshing: boolean }) {
+  if (distance <= 1 && !refreshing) return null;
+  const progress = Math.min(1, distance / 76);
+  return (
+    <div className="pull-refresh" style={{ transform: `translate(-50%, ${Math.min(distance, 74)}px)`, opacity: Math.max(0.35, progress) }}>
+      <span className={refreshing ? 'spinning' : ''}>↻</span>
+      <small>{refreshing ? 'Refreshing' : progress >= 1 ? 'Release to refresh' : 'Pull to refresh'}</small>
     </div>
   );
 }
@@ -2074,10 +2182,18 @@ function AppearanceSettings({
     });
   };
 
+  const updateSocialPlatform = (link: SocialLink, platform: string) => {
+    const platformMeta = socialPlatforms.get(platform as (typeof socialPlatformOptions)[number]['value']);
+    updateSocialLink(link.id, {
+      platform,
+      label: platform === 'custom' ? link.label : platformMeta?.label || link.label,
+    });
+  };
+
   const addSocialLink = () => {
     setDraftTheme({
       ...draftTheme,
-      socialLinks: [...(draftTheme.socialLinks || []), { id: `social-${Date.now()}`, label: '', url: '', active: true }],
+      socialLinks: [...(draftTheme.socialLinks || []), { id: `social-${Date.now()}`, platform: 'instagram', label: 'Instagram', url: '', active: true }],
     });
   };
 
@@ -2208,9 +2324,21 @@ function AppearanceSettings({
               {(draftTheme.socialLinks || []).map((link) => (
                 <div key={link.id} className="social-link-row">
                   <label>
-                    {t(locale, 'socialLabel')}
-                    <input value={link.label} onChange={(event) => updateSocialLink(link.id, { label: event.target.value })} placeholder="Instagram" />
+                    {t(locale, 'socialPlatform')}
+                    <select value={link.platform || socialPlatformKind(link)} onChange={(event) => updateSocialPlatform(link, event.target.value)}>
+                      {socialPlatformOptions.map((platform) => (
+                        <option key={platform.value} value={platform.value}>
+                          {platform.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
+                  {(link.platform || socialPlatformKind(link)) === 'custom' && (
+                    <label>
+                      {t(locale, 'socialLabel')}
+                      <input value={link.label} onChange={(event) => updateSocialLink(link.id, { label: event.target.value })} placeholder="Website" />
+                    </label>
+                  )}
                   <label>
                     {t(locale, 'socialUrl')}
                     <input value={link.url} onChange={(event) => updateSocialLink(link.id, { url: event.target.value })} placeholder="https://..." />

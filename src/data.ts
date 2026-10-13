@@ -151,9 +151,9 @@ export const defaultTheme: ThemeSettings = {
   logoUrl: '',
   menuUrl: import.meta.env.VITE_MENU_PUBLIC_URL || 'https://sweezypop-1.vercel.app/',
   socialLinks: [
-    { id: 'instagram', label: 'Instagram', url: '', active: false },
-    { id: 'facebook', label: 'Facebook', url: '', active: false },
-    { id: 'tiktok', label: 'TikTok', url: '', active: false },
+    { id: 'instagram', platform: 'instagram', label: 'Instagram', url: '', active: false },
+    { id: 'facebook', platform: 'facebook', label: 'Facebook', url: '', active: false },
+    { id: 'tiktok', platform: 'tiktok', label: 'TikTok', url: '', active: false },
   ],
   phoneCountryCode: '+49',
   phoneNumber: '',

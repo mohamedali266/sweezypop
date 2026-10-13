@@ -16,6 +16,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overscroll-behavior-y: contain;
 }
 
 button,
@@ -76,6 +77,51 @@ button {
   max-width: 520px;
   color: #756a80;
   line-height: 1.6;
+}
+
+.pull-refresh {
+  position: fixed;
+  top: -62px;
+  left: 50%;
+  z-index: 80;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(80, 60, 100, 0.1);
+  border-radius: 999px;
+  color: #211b33;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 36px rgba(80, 60, 100, 0.16);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.pull-refresh span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--button-text);
+  background: var(--accent);
+  font-weight: 950;
+}
+
+.pull-refresh .spinning {
+  animation: spin 720ms linear infinite;
+}
+
+.pull-refresh small {
+  font-weight: 850;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes loader-fade {
@@ -410,21 +456,22 @@ button {
   line-height: 1;
 }
 
+.social-app-icon img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
 .social-app-icon.instagram {
   background: linear-gradient(135deg, #feda75, #d62976 48%, #4f5bd5);
 }
 
 .social-app-icon.facebook {
   background: #1877f2;
-  font-family: Georgia, serif;
-  font-size: 1.6rem;
 }
 
 .social-app-icon.tiktok {
   background: #050505;
-  color: #25f4ee;
-  text-shadow: 2px 1px 0 #fe2c55;
-  font-size: 1.4rem;
 }
 
 .social-app-icon.youtube {
@@ -836,6 +883,7 @@ button {
 .order-card select,
 .qr-card input,
 .contact-settings input,
+.contact-settings select,
 .table-row input,
 .table-row select {
   width: 100%;

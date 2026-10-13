@@ -65,15 +65,17 @@ function writeOfferDescription(item: MenuItem) {
 function normalizeSocialLinks(value: unknown, fallback: SocialLink[]) {
   if (!Array.isArray(value)) return fallback;
   return value
-    .map((link) => {
+    .map((link): SocialLink | null => {
       if (!link || typeof link !== 'object') return null;
       const candidate = link as Partial<SocialLink>;
-      return {
+      const normalized: SocialLink = {
         id: String(candidate.id || `social-${Date.now()}`),
         label: String(candidate.label || ''),
         url: String(candidate.url || ''),
         active: Boolean(candidate.active),
       };
+      if (typeof candidate.platform === 'string') normalized.platform = candidate.platform;
+      return normalized;
     })
     .filter((link): link is SocialLink => Boolean(link && link.label));
 }
