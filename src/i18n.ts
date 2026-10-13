@@ -188,6 +188,10 @@ const messages: Record<Locale, Messages> = {
     socialSettingsCopy: 'Manage the links that customers can open from the public menu.',
     nameRequired: 'Name is required.',
     saveFailed: 'Saving failed. Check Supabase columns and permissions.',
+    installDashboard: 'Install dashboard app',
+    installDashboardCopy: 'Add the owner dashboard to this device for faster access.',
+    installIosCopy: 'On iPhone, tap Share, then Add to Home Screen.',
+    install: 'Install',
   },
   de: {
     menu: 'Speisekarte',
@@ -374,6 +378,10 @@ const messages: Record<Locale, Messages> = {
     socialSettingsCopy: 'Verwalte die Links, die Kunden auf der oeffentlichen Menuseite oeffnen koennen.',
     nameRequired: 'Name ist erforderlich.',
     saveFailed: 'Speichern fehlgeschlagen. Bitte Supabase-Spalten und Rechte pruefen.',
+    installDashboard: 'Dashboard-App installieren',
+    installDashboardCopy: 'Fuege das Owner-Dashboard fuer schnellen Zugriff zu diesem Geraet hinzu.',
+    installIosCopy: 'Auf dem iPhone: Teilen antippen, dann Zum Home-Bildschirm hinzufuegen.',
+    install: 'Installieren',
   },
 };
 

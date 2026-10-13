@@ -49,6 +49,11 @@ type View = 'menu' | 'login' | 'owner' | 'admin' | 'password-change';
 type DashboardSection = 'overview' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
@@ -231,6 +236,9 @@ function AppContent() {
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const touchStartY = useRef<number | null>(null);
 
   const applyRemoteState = (remoteState: RemoteState) => {
@@ -270,6 +278,73 @@ function AppContent() {
     const loaderTimer = window.setTimeout(() => setShowLoader(false), 3000);
     return () => window.clearTimeout(loaderTimer);
   }, []);
+
+  useEffect(() => {
+    const manifest = {
+      name: `${theme.siteName} Dashboard`,
+      short_name: theme.siteName.slice(0, 12) || 'Sweezypop',
+      description: 'Restaurant menu dashboard and QR ordering workspace.',
+      start_url: '/#login',
+      scope: '/',
+      display: 'standalone',
+      background_color: theme.background,
+      theme_color: theme.primary,
+      icons: [
+        { src: theme.logoUrl || '/pwa-icon.svg', sizes: '192x192', type: theme.logoUrl ? undefined : 'image/svg+xml', purpose: 'any maskable' },
+        { src: theme.logoUrl || '/pwa-icon.svg', sizes: '512x512', type: theme.logoUrl ? undefined : 'image/svg+xml', purpose: 'any maskable' },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    const manifestUrl = URL.createObjectURL(blob);
+    let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = manifestUrl;
+    let appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+    if (!appleIcon) {
+      appleIcon = document.createElement('link');
+      appleIcon.rel = 'apple-touch-icon';
+      document.head.appendChild(appleIcon);
+    }
+    appleIcon.href = theme.logoUrl || '/pwa-icon.svg';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.primary);
+    return () => URL.revokeObjectURL(manifestUrl);
+  }, [theme.background, theme.logoUrl, theme.primary, theme.siteName]);
+
+  useEffect(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+    setIsStandalone(standalone);
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      if (authRole && !standalone) setShowInstallBanner(true);
+    };
+
+    const onInstalled = () => {
+      setIsStandalone(true);
+      setShowInstallBanner(false);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, [authRole]);
+
+  useEffect(() => {
+    if (authRole && !isStandalone) {
+      const timer = window.setTimeout(() => setShowInstallBanner(true), 1200);
+      return () => window.clearTimeout(timer);
+    }
+    setShowInstallBanner(false);
+  }, [authRole, isStandalone]);
 
   useEffect(() => {
     void restoreDashboardSession();
@@ -510,6 +585,16 @@ function AppContent() {
     window.history.replaceState(null, '', window.location.pathname);
   };
 
+  const installDashboardApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') {
+      setShowInstallBanner(false);
+      setInstallPrompt(null);
+    }
+  };
+
   return (
     <div
       className="app"
@@ -530,6 +615,15 @@ function AppContent() {
     >
       {showLoader && <LoaderScreen />}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
+      {authRole && showInstallBanner && !isStandalone && (
+        <InstallAppBanner
+          locale={locale}
+          theme={theme}
+          canInstall={Boolean(installPrompt)}
+          onInstall={() => void installDashboardApp()}
+          onDismiss={() => setShowInstallBanner(false)}
+        />
+      )}
       <TopNav view={view} setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
       {view === 'menu' ? (
         <MenuPage
@@ -641,6 +735,38 @@ function PullToRefreshIndicator({ distance, refreshing }: { distance: number; re
       <span className={refreshing ? 'spinning' : ''}>↻</span>
       <small>{refreshing ? 'Refreshing' : progress >= 1 ? 'Release to refresh' : 'Pull to refresh'}</small>
     </div>
+  );
+}
+
+function InstallAppBanner({
+  locale,
+  theme,
+  canInstall,
+  onInstall,
+  onDismiss,
+}: {
+  locale: Locale;
+  theme: ThemeSettings;
+  canInstall: boolean;
+  onInstall: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <aside className="install-banner animated-panel" role="status">
+      <BrandMark theme={theme} />
+      <div>
+        <strong>{t(locale, 'installDashboard')}</strong>
+        <p>{canInstall ? t(locale, 'installDashboardCopy') : t(locale, 'installIosCopy')}</p>
+      </div>
+      {canInstall && (
+        <button type="button" className="small-action" onClick={onInstall}>
+          {t(locale, 'install')}
+        </button>
+      )}
+      <button type="button" className="ghost-icon" onClick={onDismiss} aria-label={t(locale, 'close')}>
+        x
+      </button>
+    </aside>
   );
 }
 
