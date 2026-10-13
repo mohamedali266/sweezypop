@@ -95,9 +95,9 @@ function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): T
     buttonText: restaurant.button_text_color || fallback.buttonText,
     card: restaurant.card_color || fallback.card,
     border: restaurant.border_color || fallback.border,
-    socialLinks: normalizeSocialLinks(restaurant.social_links, fallback.socialLinks),
-    phoneCountryCode: restaurant.phone_country_code || fallback.phoneCountryCode,
-    phoneNumber: restaurant.phone_number || fallback.phoneNumber,
+    socialLinks: normalizeSocialLinks(restaurant.social_links, fallback.socialLinks || []),
+    phoneCountryCode: restaurant.phone_country_code || fallback.phoneCountryCode || '+49',
+    phoneNumber: restaurant.phone_number || fallback.phoneNumber || '',
   };
 }
 
@@ -137,7 +137,7 @@ async function saveOptionalRestaurantSettings(restaurantId: string, theme: Theme
     .from('restaurants')
     .update({
       menu_layout: layout,
-      social_links: theme.socialLinks,
+      social_links: theme.socialLinks || [],
       phone_country_code: theme.phoneCountryCode || null,
       phone_number: theme.phoneNumber || null,
     })

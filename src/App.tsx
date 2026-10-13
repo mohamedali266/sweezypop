@@ -97,6 +97,16 @@ function saveStored(key: string, value: unknown) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
+function normalizeThemeSettings(value: ThemeSettings): ThemeSettings {
+  return {
+    ...defaultTheme,
+    ...value,
+    socialLinks: Array.isArray(value.socialLinks) ? value.socialLinks : defaultTheme.socialLinks,
+    phoneCountryCode: value.phoneCountryCode || defaultTheme.phoneCountryCode,
+    phoneNumber: value.phoneNumber || '',
+  };
+}
+
 function BrandMark({ theme }: { theme: ThemeSettings }) {
   return (
     <span className="brand-mark">
@@ -160,7 +170,7 @@ function App() {
   const [categories, setCategories] = useState<Category[]>(() => loadStored(storageKeys.categories, seedCategories));
   const [orders, setOrders] = useState<Order[]>(() => loadStored(storageKeys.orders, initialOrders));
   const [users, setUsers] = useState<AppUser[]>(() => loadStored(storageKeys.users, seedUsers));
-  const [theme, setTheme] = useState<ThemeSettings>(() => loadStored(storageKeys.theme, defaultTheme));
+  const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
   const [hours, setHours] = useState<OpeningHour[]>(() => loadStored(storageKeys.hours, seedHours));
   const [activeCategory, setActiveCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -203,7 +213,7 @@ function App() {
         if (event.key === storageKeys.categories) setCategories(value);
         if (event.key === storageKeys.orders) setOrders(value);
         if (event.key === storageKeys.users) setUsers(value);
-        if (event.key === storageKeys.theme) setTheme(value);
+        if (event.key === storageKeys.theme) setTheme(normalizeThemeSettings(value));
         if (event.key === storageKeys.hours) setHours(value);
         if (event.key === storageKeys.layout) setLayout(value);
       } catch {
@@ -224,7 +234,7 @@ function App() {
         setItems(remoteState.items);
         setOrders(remoteState.orders);
         setUsers(remoteState.users);
-        setTheme(remoteState.theme);
+        setTheme(normalizeThemeSettings(remoteState.theme));
         setHours(remoteState.hours);
         setLayout(remoteState.layout);
       })
@@ -344,7 +354,7 @@ function App() {
         setItems(remoteState.items);
         setOrders(remoteState.orders);
         setUsers(remoteState.users);
-        setTheme(remoteState.theme);
+        setTheme(normalizeThemeSettings(remoteState.theme));
         setHours(remoteState.hours);
         setLayout(remoteState.layout);
       }
@@ -701,11 +711,13 @@ function MenuPage(props: {
 
 function ContactStrip({ locale, theme }: { locale: Locale; theme: ThemeSettings }) {
   const [socialOpen, setSocialOpen] = useState(false);
-  const activeLinks = theme.socialLinks.filter((link) => link.active && link.label.trim() && link.url.trim());
-  const hasPhone = Boolean(theme.phoneNumber.trim());
-  const displayPhone = hasPhone ? `${theme.phoneCountryCode} ${theme.phoneNumber}`.trim() : '';
-  const callHref = hasPhone ? `tel:${normalizeContactNumber(theme.phoneCountryCode, theme.phoneNumber)}` : undefined;
-  const whatsappHref = hasPhone ? `https://wa.me/${whatsappNumber(theme.phoneCountryCode, theme.phoneNumber)}` : undefined;
+  const activeLinks = (theme.socialLinks || []).filter((link) => link.active && link.label.trim() && link.url.trim());
+  const phoneNumber = theme.phoneNumber || '';
+  const phoneCountryCode = theme.phoneCountryCode || defaultTheme.phoneCountryCode;
+  const hasPhone = Boolean(phoneNumber.trim());
+  const displayPhone = hasPhone ? `${phoneCountryCode} ${phoneNumber}`.trim() : '';
+  const callHref = hasPhone ? `tel:${normalizeContactNumber(phoneCountryCode, phoneNumber)}` : undefined;
+  const whatsappHref = hasPhone ? `https://wa.me/${whatsappNumber(phoneCountryCode, phoneNumber)}` : undefined;
 
   if (!activeLinks.length && !hasPhone) return null;
 
@@ -1977,19 +1989,19 @@ function AppearanceSettings({
   const updateSocialLink = (id: string, patch: Partial<SocialLink>) => {
     setDraftTheme({
       ...draftTheme,
-      socialLinks: draftTheme.socialLinks.map((link) => (link.id === id ? { ...link, ...patch } : link)),
+      socialLinks: (draftTheme.socialLinks || []).map((link) => (link.id === id ? { ...link, ...patch } : link)),
     });
   };
 
   const addSocialLink = () => {
     setDraftTheme({
       ...draftTheme,
-      socialLinks: [...draftTheme.socialLinks, { id: `social-${Date.now()}`, label: '', url: '', active: true }],
+      socialLinks: [...(draftTheme.socialLinks || []), { id: `social-${Date.now()}`, label: '', url: '', active: true }],
     });
   };
 
   const deleteSocialLink = (id: string) => {
-    setDraftTheme({ ...draftTheme, socialLinks: draftTheme.socialLinks.filter((link) => link.id !== id) });
+    setDraftTheme({ ...draftTheme, socialLinks: (draftTheme.socialLinks || []).filter((link) => link.id !== id) });
   };
 
   const saveAppearance = async () => {
@@ -2094,11 +2106,11 @@ function AppearanceSettings({
             <div className="contact-settings-grid">
               <label>
                 {t(locale, 'phoneCountryCode')}
-                <input value={draftTheme.phoneCountryCode} onChange={(event) => setDraftTheme({ ...draftTheme, phoneCountryCode: event.target.value })} placeholder="+49" />
+                <input value={draftTheme.phoneCountryCode || ''} onChange={(event) => setDraftTheme({ ...draftTheme, phoneCountryCode: event.target.value })} placeholder="+49" />
               </label>
               <label>
                 {t(locale, 'restaurantPhone')}
-                <input value={draftTheme.phoneNumber} onChange={(event) => setDraftTheme({ ...draftTheme, phoneNumber: event.target.value })} placeholder="151 000 2026" />
+                <input value={draftTheme.phoneNumber || ''} onChange={(event) => setDraftTheme({ ...draftTheme, phoneNumber: event.target.value })} placeholder="151 000 2026" />
               </label>
             </div>
 
@@ -2112,7 +2124,7 @@ function AppearanceSettings({
                   <Plus size={16} /> {t(locale, 'addSocialLink')}
                 </button>
               </div>
-              {draftTheme.socialLinks.map((link) => (
+              {(draftTheme.socialLinks || []).map((link) => (
                 <div key={link.id} className="social-link-row">
                   <label>
                     {t(locale, 'socialLabel')}
