@@ -6,6 +6,7 @@ import {
   BadgeDollarSign,
   CalendarClock,
   Check,
+  ChevronRight,
   CircleUserRound,
   Download,
   FileSpreadsheet,
@@ -97,6 +98,7 @@ const storageKeys = {
   theme: 'sweezypop.theme',
   hours: 'sweezypop.hours',
   dashboardView: 'sweezypop.dashboardView',
+  pwaInstallDismissed: 'sweezypop.pwaInstallDismissed',
 } as const;
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -321,7 +323,7 @@ function AppContent() {
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event as BeforeInstallPromptEvent);
-      if (authRole && !standalone) setShowInstallBanner(true);
+      if (authRole && !standalone && !loadStored(storageKeys.pwaInstallDismissed, false)) setShowInstallBanner(true);
     };
 
     const onInstalled = () => {
@@ -340,6 +342,7 @@ function AppContent() {
 
   useEffect(() => {
     if (authRole && !isStandalone) {
+      if (loadStored(storageKeys.pwaInstallDismissed, false)) return;
       const timer = window.setTimeout(() => setShowInstallBanner(true), 1200);
       return () => window.clearTimeout(timer);
     }
@@ -595,6 +598,11 @@ function AppContent() {
     }
   };
 
+  const dismissInstallBanner = () => {
+    saveStored(storageKeys.pwaInstallDismissed, true);
+    setShowInstallBanner(false);
+  };
+
   return (
     <div
       className="app"
@@ -621,10 +629,10 @@ function AppContent() {
           theme={theme}
           canInstall={Boolean(installPrompt)}
           onInstall={() => void installDashboardApp()}
-          onDismiss={() => setShowInstallBanner(false)}
+          onDismiss={dismissInstallBanner}
         />
       )}
-      <TopNav view={view} setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
+      <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
       {view === 'menu' ? (
         <MenuPage
           locale={locale}
@@ -771,7 +779,6 @@ function InstallAppBanner({
 }
 
 function TopNav({
-  view,
   setView,
   locale,
   setLocale,
@@ -779,7 +786,6 @@ function TopNav({
   authRole,
   onLogout,
 }: {
-  view: View;
   setView: (view: View) => void;
   locale: Locale;
   setLocale: (locale: Locale) => void;
@@ -795,23 +801,13 @@ function TopNav({
       </button>
       <div className="nav-spacer" />
       <div className="locale-switch" aria-label={t(locale, 'languageSwitch')}>
-        <button className={locale === 'en' ? 'active' : ''} onClick={() => setLocale('en')}>
-          EN
-        </button>
-        <button className={locale === 'de' ? 'active' : ''} onClick={() => setLocale('de')}>
-          DE
+        <button className="active" onClick={() => setLocale(locale === 'en' ? 'de' : 'en')} aria-label={t(locale, 'languageSwitch')}>
+          {locale.toUpperCase()}
         </button>
         {authRole ? (
-          <>
-            <button className={view === authRole ? 'active' : ''} onClick={() => setView(authRole)}>
-              <Settings size={16} />
-              {t(locale, 'dashboard')}
-            </button>
-            <button onClick={onLogout}>
-              <LogOut size={16} />
-              {t(locale, 'signOut')}
-            </button>
-          </>
+          <button className="icon-only-nav" onClick={onLogout} aria-label={t(locale, 'signOut')} title={t(locale, 'signOut')}>
+            <LogOut size={18} />
+          </button>
         ) : null}
       </div>
     </header>
@@ -1368,6 +1364,7 @@ function Dashboard(props: {
   const revenue = props.orders.reduce((sum, order) => sum + order.total, 0);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     QRCode.toDataURL(props.theme.menuUrl, { width: 220, margin: 2, color: { dark: '#1d1a2e', light: '#ffffff' } }).then(setQrDataUrl);
@@ -1527,9 +1524,23 @@ function Dashboard(props: {
 
   const activeLabel = sidebarItems.find((item) => item.id === activeSection)?.label || t(props.locale, 'dashboard');
 
+  const selectDashboardSection = (id: DashboardSection) => {
+    setActiveSection(id);
+    setMobileMenuOpen(false);
+  };
+
   return (
-    <main className="dashboard-shell">
-      <aside className="dashboard-sidebar">
+    <main className={`dashboard-shell ${mobileMenuOpen ? 'sidebar-open' : ''}`}>
+      <button
+        type="button"
+        className={`dashboard-menu-toggle ${mobileMenuOpen ? 'open' : ''}`}
+        onClick={() => setMobileMenuOpen((current) => !current)}
+        aria-label={mobileMenuOpen ? t(props.locale, 'close') : t(props.locale, 'menu')}
+      >
+        <ChevronRight size={20} />
+      </button>
+      {mobileMenuOpen && <button type="button" className="dashboard-sidebar-scrim" onClick={() => setMobileMenuOpen(false)} aria-label={t(props.locale, 'close')} />}
+      <aside className={`dashboard-sidebar ${mobileMenuOpen ? 'open' : ''}`}>
         <div className="owner-card">
           <BrandMark theme={props.theme} />
           <div>
@@ -1538,7 +1549,7 @@ function Dashboard(props: {
           </div>
         </div>
         {sidebarItems.map(({ id, label, icon: Icon }) => (
-          <button key={id} className={activeSection === id ? 'active' : ''} onClick={() => setActiveSection(id)}>
+          <button key={id} className={activeSection === id ? 'active' : ''} onClick={() => selectDashboardSection(id)}>
             <Icon size={18} />
             {label}
           </button>
