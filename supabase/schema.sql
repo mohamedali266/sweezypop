@@ -18,6 +18,9 @@ create table if not exists restaurants (
   card_color text default '#ffffff',
   border_color text default '#eadff0',
   menu_layout text default 'grid' check (menu_layout in ('grid', 'list')),
+  social_links jsonb default '[]'::jsonb,
+  phone_country_code text default '+49',
+  phone_number text,
   created_at timestamptz default now()
 );
 

@@ -15,13 +15,16 @@ import {
   List,
   LogIn,
   LogOut,
+  MessageCircle,
   Minus,
   Palette,
+  PhoneCall,
   Plus,
   QrCode,
   Search,
   Save,
   Settings,
+  Share2,
   ShoppingBag,
   Trash2,
   UsersRound,
@@ -36,15 +39,16 @@ import {
   loadRemoteState,
   resetAdminUserPassword,
   saveRemoteState,
+  saveRemoteSiteSettings,
   type AdminUserPayload,
   type RemoteState,
 } from './remoteData';
 import { isSupabaseConfigured, supabase } from './supabase';
-import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, ThemeSettings } from './types';
+import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'password-change';
 type DashboardSection = 'overview' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
-type AppearanceTab = 'brand' | 'colors' | 'layout' | 'qr';
+type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
@@ -57,6 +61,16 @@ function itemDescription(item: MenuItem, locale: Locale) {
 function parseImportedPrice(value: unknown) {
   const normalized = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
   return Number(normalized || 0);
+}
+
+function normalizeContactNumber(countryCode: string, phoneNumber: string) {
+  const dial = countryCode.trim().startsWith('+') ? countryCode.trim() : `+${countryCode.trim()}`;
+  const digits = `${dial}${phoneNumber}`.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
+  return digits;
+}
+
+function whatsappNumber(countryCode: string, phoneNumber: string) {
+  return normalizeContactNumber(countryCode, phoneNumber).replace(/[^\d]/g, '');
 }
 
 const storageKeys = {
@@ -249,7 +263,17 @@ function App() {
     }, 900);
 
     return () => window.clearTimeout(syncId);
-  }, [authRole, categories, hours, items, layout, orders, remoteReady, theme, users]);
+    // Theme and layout are saved explicitly from Appearance to avoid broad dashboard writes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authRole, categories, hours, items, orders, remoteReady, users]);
+
+  const persistSiteSettings = async (nextTheme: ThemeSettings, nextLayout: MenuLayout) => {
+    setTheme(nextTheme);
+    setLayout(nextLayout);
+    if (isSupabaseConfigured && authRole) {
+      await saveRemoteSiteSettings(nextTheme, nextLayout);
+    }
+  };
 
   const addToCart = (item: MenuItem) => {
     setSubmittedOrderId('');
@@ -274,14 +298,14 @@ function App() {
     setCart((current) => current.filter((line) => line.item.id !== itemId));
   };
 
-  const submitOrder = (payload: { name: string; address: string; phone: string; notes: string }) => {
+  const submitOrder = (payload: { name: string; notes: string }) => {
     if (!cart.length) return;
     const total = cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
     const order: Order = {
       id: `SP-${Math.floor(1100 + Math.random() * 9000)}`,
       customerName: payload.name || 'Guest',
-      address: payload.address,
-      phone: payload.phone,
+      address: '',
+      phone: '',
       notes: payload.notes,
       lines: cart,
       total,
@@ -404,6 +428,7 @@ function App() {
           setUsers={setUsers}
           theme={theme}
           setTheme={setTheme}
+          persistSiteSettings={persistSiteSettings}
           hours={hours}
           setHours={setHours}
         />
@@ -594,7 +619,7 @@ function MenuPage(props: {
   addToCart: (item: MenuItem) => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; address: string; phone: string; notes: string }) => void;
+  submitOrder: (payload: { name: string; notes: string }) => void;
   submittedOrderId: string;
 }) {
   const filtered = useMemo(() => {
@@ -629,6 +654,8 @@ function MenuPage(props: {
           </div>
         </div>
       </section>
+
+      <ContactStrip locale={props.locale} theme={props.theme} />
 
       <section className="menu-tools">
         <label className="search-box">
@@ -669,6 +696,81 @@ function MenuPage(props: {
         submittedOrderId={props.submittedOrderId}
       />
     </main>
+  );
+}
+
+function ContactStrip({ locale, theme }: { locale: Locale; theme: ThemeSettings }) {
+  const [socialOpen, setSocialOpen] = useState(false);
+  const activeLinks = theme.socialLinks.filter((link) => link.active && link.label.trim() && link.url.trim());
+  const hasPhone = Boolean(theme.phoneNumber.trim());
+  const displayPhone = hasPhone ? `${theme.phoneCountryCode} ${theme.phoneNumber}`.trim() : '';
+  const callHref = hasPhone ? `tel:${normalizeContactNumber(theme.phoneCountryCode, theme.phoneNumber)}` : undefined;
+  const whatsappHref = hasPhone ? `https://wa.me/${whatsappNumber(theme.phoneCountryCode, theme.phoneNumber)}` : undefined;
+
+  if (!activeLinks.length && !hasPhone) return null;
+
+  return (
+    <section className="contact-strip" aria-label={t(locale, 'contactAndSocial')}>
+      {activeLinks.length ? (
+        <button type="button" className="social-trigger" onClick={() => setSocialOpen(true)}>
+          <span className="contact-icon">
+            <Share2 size={18} />
+          </span>
+          <span>
+            <strong>{t(locale, 'socialMedia')}</strong>
+            <small>{activeLinks.length} {t(locale, 'links')}</small>
+          </span>
+        </button>
+      ) : null}
+
+      {hasPhone ? (
+        <div className="phone-strip">
+          <span>
+            <strong>{displayPhone}</strong>
+            <small>{t(locale, 'restaurantPhone')}</small>
+          </span>
+          <div>
+            <a className="contact-icon-button" href={callHref} aria-label={t(locale, 'callRestaurant')}>
+              <PhoneCall size={18} />
+            </a>
+            <a className="contact-icon-button whatsapp" href={whatsappHref} target="_blank" rel="noreferrer" aria-label={t(locale, 'openWhatsapp')}>
+              <MessageCircle size={18} />
+            </a>
+          </div>
+        </div>
+      ) : null}
+
+      {socialOpen && <SocialLinksModal locale={locale} links={activeLinks} onClose={() => setSocialOpen(false)} />}
+    </section>
+  );
+}
+
+function SocialLinksModal({ locale, links, onClose }: { locale: Locale; links: SocialLink[]; onClose: () => void }) {
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <article className="social-modal-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'socialLinks')} onClick={(event) => event.stopPropagation()}>
+        <div className="section-head">
+          <div>
+            <span className="eyebrow dark">{t(locale, 'socialMedia')}</span>
+            <h2>{t(locale, 'socialLinks')}</h2>
+            <p className="muted">{t(locale, 'socialLinksCopy')}</p>
+          </div>
+          <button type="button" className="ghost-icon dark" onClick={onClose} aria-label={t(locale, 'close')}>
+            x
+          </button>
+        </div>
+        <div className="social-link-list">
+          {links.map((link) => (
+            <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="social-link-card">
+              <span className="contact-icon">
+                <Share2 size={18} />
+              </span>
+              <strong>{link.label}</strong>
+            </a>
+          ))}
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -808,16 +910,27 @@ function CartPanel({
   cart: CartLine[];
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; address: string; phone: string; notes: string }) => void;
+  submitOrder: (payload: { name: string; notes: string }) => void;
   submittedOrderId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState('');
   const total = cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
+
+  const handleSubmitOrder = () => {
+    if (!name.trim()) {
+      setFormError(t(locale, 'nameRequired'));
+      return;
+    }
+    setFormError('');
+    submitOrder({ name: name.trim(), notes: notes.trim() });
+    setOpen(false);
+    setName('');
+    setNotes('');
+  };
 
   if (!cart.length && !submittedOrderId) {
     return null;
@@ -879,11 +992,10 @@ function CartPanel({
             </div>
             <div className="checkout-fields">
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t(locale, 'customerName')} />
-              <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={t(locale, 'address')} />
-              <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={t(locale, 'phone')} />
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={t(locale, 'notes')} />
             </div>
-            <button className="primary-action full" onClick={() => submitOrder({ name, address, phone, notes })}>
+            {formError && <p className="form-error">{formError}</p>}
+            <button className="primary-action full" onClick={handleSubmitOrder}>
               {t(locale, 'checkout')}
             </button>
           </aside>
@@ -922,6 +1034,7 @@ function Dashboard(props: {
   setUsers: (users: AppUser[]) => void;
   theme: ThemeSettings;
   setTheme: (theme: ThemeSettings) => void;
+  persistSiteSettings: (theme: ThemeSettings, layout: MenuLayout) => Promise<void>;
   hours: OpeningHour[];
   setHours: (hours: OpeningHour[]) => void;
 }) {
@@ -1208,6 +1321,7 @@ function Dashboard(props: {
               setTheme={props.setTheme}
               layout={props.layout}
               setLayout={props.setLayout}
+              persistSiteSettings={props.persistSiteSettings}
             />
           )}
 
@@ -1260,8 +1374,9 @@ function OrderCard({ locale, order, orders, setOrders }: { locale: Locale; order
       <div>
         <strong>{order.id}</strong>
         <p>
-          {order.customerName} - {order.phone}
+          {order.customerName}
         </p>
+        {order.notes && <small>{order.notes}</small>}
         <small>{order.lines.map((line) => `${line.quantity}x ${line.item.name[locale]}`).join(', ')}</small>
       </div>
       <div>
@@ -1835,17 +1950,21 @@ function AppearanceSettings({
   setTheme,
   layout,
   setLayout,
+  persistSiteSettings,
 }: {
   locale: Locale;
   theme: ThemeSettings;
   setTheme: (theme: ThemeSettings) => void;
   layout: MenuLayout;
   setLayout: (layout: MenuLayout) => void;
+  persistSiteSettings: (theme: ThemeSettings, layout: MenuLayout) => Promise<void>;
 }) {
   const [draftTheme, setDraftTheme] = useState<ThemeSettings>(theme);
   const [draftLayout, setDraftLayout] = useState<MenuLayout>(layout);
   const [activeTab, setActiveTab] = useState<AppearanceTab>('brand');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     setDraftTheme(theme);
@@ -1855,11 +1974,38 @@ function AppearanceSettings({
     setDraftLayout(layout);
   }, [layout]);
 
-  const saveAppearance = () => {
-    setTheme(draftTheme);
-    setLayout(draftLayout);
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1800);
+  const updateSocialLink = (id: string, patch: Partial<SocialLink>) => {
+    setDraftTheme({
+      ...draftTheme,
+      socialLinks: draftTheme.socialLinks.map((link) => (link.id === id ? { ...link, ...patch } : link)),
+    });
+  };
+
+  const addSocialLink = () => {
+    setDraftTheme({
+      ...draftTheme,
+      socialLinks: [...draftTheme.socialLinks, { id: `social-${Date.now()}`, label: '', url: '', active: true }],
+    });
+  };
+
+  const deleteSocialLink = (id: string) => {
+    setDraftTheme({ ...draftTheme, socialLinks: draftTheme.socialLinks.filter((link) => link.id !== id) });
+  };
+
+  const saveAppearance = async () => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      setTheme(draftTheme);
+      setLayout(draftLayout);
+      await persistSiteSettings(draftTheme, draftLayout);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1800);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t(locale, 'saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1869,17 +2015,19 @@ function AppearanceSettings({
           <h2>{t(locale, 'appearance')}</h2>
           <p className="muted">{t(locale, 'appearanceCopy')}</p>
         </div>
-        <button className="small-action" onClick={saveAppearance}>
+        <button className="small-action" onClick={() => void saveAppearance()} disabled={saving}>
           <Save size={16} />
-          {saved ? t(locale, 'saved') : t(locale, 'save')}
+          {saving ? t(locale, 'saving') : saved ? t(locale, 'saved') : t(locale, 'save')}
         </button>
       </div>
+      {saveError && <p className="form-error">{saveError}</p>}
 
       <div className="appearance-tabs">
         {([
           ['brand', t(locale, 'brand')],
           ['colors', t(locale, 'colors')],
           ['layout', t(locale, 'layout')],
+          ['contact', t(locale, 'contactAndSocial')],
           ['qr', 'QR'],
         ] as Array<[AppearanceTab, string]>).map(([id, label]) => (
           <button key={id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>
@@ -1938,6 +2086,52 @@ function AppearanceSettings({
             <h3>{t(locale, 'layout')}</h3>
             <p className="muted">{t(locale, 'layoutCopy')}</p>
             <LayoutToggle locale={locale} layout={draftLayout} setLayout={setDraftLayout} />
+          </div>
+        )}
+
+        {activeTab === 'contact' && (
+          <div className="contact-settings">
+            <div className="contact-settings-grid">
+              <label>
+                {t(locale, 'phoneCountryCode')}
+                <input value={draftTheme.phoneCountryCode} onChange={(event) => setDraftTheme({ ...draftTheme, phoneCountryCode: event.target.value })} placeholder="+49" />
+              </label>
+              <label>
+                {t(locale, 'restaurantPhone')}
+                <input value={draftTheme.phoneNumber} onChange={(event) => setDraftTheme({ ...draftTheme, phoneNumber: event.target.value })} placeholder="151 000 2026" />
+              </label>
+            </div>
+
+            <div className="social-links-editor">
+              <div className="section-head">
+                <div>
+                  <h3>{t(locale, 'socialLinks')}</h3>
+                  <p className="muted">{t(locale, 'socialSettingsCopy')}</p>
+                </div>
+                <button type="button" className="small-action neutral" onClick={addSocialLink}>
+                  <Plus size={16} /> {t(locale, 'addSocialLink')}
+                </button>
+              </div>
+              {draftTheme.socialLinks.map((link) => (
+                <div key={link.id} className="social-link-row">
+                  <label>
+                    {t(locale, 'socialLabel')}
+                    <input value={link.label} onChange={(event) => updateSocialLink(link.id, { label: event.target.value })} placeholder="Instagram" />
+                  </label>
+                  <label>
+                    {t(locale, 'socialUrl')}
+                    <input value={link.url} onChange={(event) => updateSocialLink(link.id, { url: event.target.value })} placeholder="https://..." />
+                  </label>
+                  <label className="toggle-field">
+                    <input type="checkbox" checked={link.active} onChange={(event) => updateSocialLink(link.id, { active: event.target.checked })} />
+                    {t(locale, 'showOnMenu')}
+                  </label>
+                  <button type="button" className="ghost-icon danger-icon" onClick={() => deleteSocialLink(link.id)} aria-label={t(locale, 'delete')}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

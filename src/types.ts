@@ -40,6 +40,13 @@ export interface Order {
   createdAt: string;
 }
 
+export interface SocialLink {
+  id: string;
+  label: string;
+  url: string;
+  active: boolean;
+}
+
 export interface AppUser {
   id: string;
   authUserId?: string;
@@ -66,6 +73,9 @@ export interface ThemeSettings {
   logoText: string;
   logoUrl: string;
   menuUrl: string;
+  socialLinks: SocialLink[];
+  phoneCountryCode: string;
+  phoneNumber: string;
 }
 
 export interface OpeningHour {

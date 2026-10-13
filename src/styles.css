@@ -312,6 +312,112 @@ button {
   margin: 22px 0 14px;
 }
 
+.contact-strip {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.62fr) minmax(280px, 1fr);
+  gap: 14px;
+  margin: 22px 0 0;
+}
+
+.social-trigger,
+.phone-strip {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 15%);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 14px 35px rgba(95, 72, 120, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.social-trigger {
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--text);
+  text-align: left;
+}
+
+.social-trigger span:last-child,
+.phone-strip > span {
+  display: grid;
+  gap: 3px;
+}
+
+.social-trigger small,
+.phone-strip small {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.contact-icon,
+.contact-icon-button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--button-text);
+  background: var(--accent);
+}
+
+.phone-strip {
+  justify-content: space-between;
+  padding: 10px 12px 10px 16px;
+}
+
+.phone-strip > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.contact-icon-button {
+  text-decoration: none;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--accent), transparent 78%);
+}
+
+.contact-icon-button.whatsapp {
+  background: #25d366;
+}
+
+.social-modal-card {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 22px;
+  background: white;
+  box-shadow: 0 26px 90px rgba(33, 27, 51, 0.22);
+}
+
+.social-link-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.social-link-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 15%);
+  border-radius: 16px;
+  color: var(--text);
+  text-decoration: none;
+  background: #fffafd;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.social-link-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent), transparent 45%);
+}
+
 .search-box {
   display: flex;
   gap: 10px;
@@ -648,6 +754,7 @@ button {
 .hours-row input,
 .order-card select,
 .qr-card input,
+.contact-settings input,
 .table-row input,
 .table-row select {
   width: 100%;
@@ -661,6 +768,7 @@ button {
 
 .cart-panel textarea,
 .theme-form textarea,
+.contact-settings textarea,
 .form-grid textarea {
   min-height: 86px;
   padding-top: 12px;
@@ -1312,6 +1420,61 @@ button {
   margin: 0;
 }
 
+.contact-settings {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 20px;
+}
+
+.contact-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.35fr) minmax(240px, 1fr);
+  gap: 14px;
+}
+
+.contact-settings label,
+.social-link-row label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.social-links-editor {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--border), transparent 18%);
+}
+
+.social-link-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.75fr) minmax(220px, 1fr) auto 42px;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 15%);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.toggle-field {
+  min-height: 42px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.toggle-field input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.danger-icon {
+  color: #a01328;
+  background: #fff0f3;
+}
+
 .input-with-icon {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1927,9 +2090,20 @@ button {
   }
 
   .menu-tools,
+  .contact-strip,
+  .contact-settings-grid,
   .dashboard-grid,
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .contact-strip {
+    gap: 10px;
+  }
+
+  .social-trigger,
+  .phone-strip {
+    min-height: 58px;
   }
 
   .items.grid {
@@ -1999,6 +2173,7 @@ button {
   .table-row,
   .editable-row,
   .item-row,
+  .social-link-row,
   .hours-row {
     grid-template-columns: 1fr;
   }

@@ -1,4 +1,4 @@
-import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, ThemeSettings } from './types';
+import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -30,6 +30,9 @@ type DbRestaurant = {
   card_color: string | null;
   border_color: string | null;
   menu_layout?: string | null;
+  social_links?: unknown | null;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
 };
 
 function appId(prefix: string, id: string) {
@@ -59,6 +62,22 @@ function writeOfferDescription(item: MenuItem) {
   return `${item.description.de || item.description.en}\n${offerMetaPrefix}${JSON.stringify({ includedItemIds: item.includedItemIds })}`;
 }
 
+function normalizeSocialLinks(value: unknown, fallback: SocialLink[]) {
+  if (!Array.isArray(value)) return fallback;
+  return value
+    .map((link) => {
+      if (!link || typeof link !== 'object') return null;
+      const candidate = link as Partial<SocialLink>;
+      return {
+        id: String(candidate.id || `social-${Date.now()}`),
+        label: String(candidate.label || ''),
+        url: String(candidate.url || ''),
+        active: Boolean(candidate.active),
+      };
+    })
+    .filter((link): link is SocialLink => Boolean(link && link.label));
+}
+
 function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): ThemeSettings {
   return {
     ...fallback,
@@ -76,6 +95,9 @@ function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): T
     buttonText: restaurant.button_text_color || fallback.buttonText,
     card: restaurant.card_color || fallback.card,
     border: restaurant.border_color || fallback.border,
+    socialLinks: normalizeSocialLinks(restaurant.social_links, fallback.socialLinks),
+    phoneCountryCode: restaurant.phone_country_code || fallback.phoneCountryCode,
+    phoneNumber: restaurant.phone_number || fallback.phoneNumber,
   };
 }
 
@@ -88,6 +110,52 @@ async function getRestaurant() {
   const { data, error } = await supabase.from('restaurants').select('*').eq('public_slug', restaurantSlug).single();
   if (error) throw error;
   return data as DbRestaurant;
+}
+
+function restaurantSettingsPayload(theme: ThemeSettings) {
+  return {
+    name: theme.siteName,
+    logo_text: theme.logoText,
+    logo_url: theme.logoUrl || null,
+    menu_url: theme.menuUrl,
+    primary_color: theme.primary,
+    accent_color: theme.accent,
+    lavender_color: theme.lavender,
+    background_color: theme.background,
+    surface_color: theme.surface,
+    text_color: theme.text,
+    muted_text_color: theme.mutedText,
+    button_text_color: theme.buttonText,
+    card_color: theme.card,
+    border_color: theme.border,
+  };
+}
+
+async function saveOptionalRestaurantSettings(restaurantId: string, theme: ThemeSettings, layout: MenuLayout) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('restaurants')
+    .update({
+      menu_layout: layout,
+      social_links: theme.socialLinks,
+      phone_country_code: theme.phoneCountryCode || null,
+      phone_number: theme.phoneNumber || null,
+    })
+    .eq('id', restaurantId);
+
+  if (error && error.code !== 'PGRST204') {
+    throw error;
+  }
+}
+
+export async function saveRemoteSiteSettings(theme: ThemeSettings, layout: MenuLayout) {
+  if (!isSupabaseConfigured || !supabase) return;
+  const restaurant = await getRestaurant();
+  const restaurantId = restaurant.id;
+
+  const { error } = await supabase.from('restaurants').update(restaurantSettingsPayload(theme)).eq('id', restaurantId);
+  if (error) throw error;
+  await saveOptionalRestaurantSettings(restaurantId, theme, layout);
 }
 
 export async function loadRemoteState(fallback: RemoteState): Promise<RemoteState | null> {
@@ -207,30 +275,9 @@ export async function saveRemoteState(state: RemoteState) {
   const restaurant = await getRestaurant();
   const restaurantId = restaurant.id;
 
-  await supabase
-    .from('restaurants')
-    .update({
-      name: state.theme.siteName,
-      logo_text: state.theme.logoText,
-      logo_url: state.theme.logoUrl || null,
-      menu_url: state.theme.menuUrl,
-      primary_color: state.theme.primary,
-      accent_color: state.theme.accent,
-      lavender_color: state.theme.lavender,
-      background_color: state.theme.background,
-      surface_color: state.theme.surface,
-      text_color: state.theme.text,
-      muted_text_color: state.theme.mutedText,
-      button_text_color: state.theme.buttonText,
-      card_color: state.theme.card,
-      border_color: state.theme.border,
-    })
-    .eq('id', restaurantId);
-
-  const { error: layoutError } = await supabase.from('restaurants').update({ menu_layout: state.layout }).eq('id', restaurantId);
-  if (layoutError && layoutError.code !== 'PGRST204') {
-    throw layoutError;
-  }
+  const { error: settingsError } = await supabase.from('restaurants').update(restaurantSettingsPayload(state.theme)).eq('id', restaurantId);
+  if (settingsError) throw settingsError;
+  await saveOptionalRestaurantSettings(restaurantId, state.theme, state.layout);
 
   await syncCategories(restaurantId, state.categories);
   await syncMenuItems(restaurantId, state.items);
