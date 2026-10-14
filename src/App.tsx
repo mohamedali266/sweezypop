@@ -158,7 +158,7 @@ function SocialAppIcon({ link }: { link: SocialLink }) {
   if (platform?.iconSlug) {
     return (
       <span className={`social-app-icon ${kind}`}>
-        <img src={`https://cdn.simpleicons.org/${platform.iconSlug}`} alt="" loading="lazy" />
+        <img src={`/social-icons/${platform.iconSlug}.svg`} alt="" width={22} height={22} />
       </span>
     );
   }
@@ -222,7 +222,15 @@ async function readMenuRowsFromWorkbook(file: File) {
 function AppContent() {
   const [view, setView] = useState<View>('menu');
   const [showLoader, setShowLoader] = useState(true);
-  const [locale, setLocale] = useState<Locale>('en');
+  const [locale, setLocale] = useState<Locale>(() => loadStored<unknown>('sweezypop.locale', 'de') === 'en' ? 'en' : 'de');
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    try {
+      saveStored('sweezypop.locale', locale);
+    } catch {
+      // Language switching remains available when browser storage is disabled.
+    }
+  }, [locale]);
   const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
   const [items, setItems] = useState<MenuItem[]>(() => safeArray(loadStored(storageKeys.items, seedItems), seedItems));
   const [categories, setCategories] = useState<Category[]>(() => safeArray(loadStored(storageKeys.categories, seedCategories), seedCategories));

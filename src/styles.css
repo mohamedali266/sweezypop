@@ -502,6 +502,7 @@ button {
   width: 22px;
   height: 22px;
   object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 
 .social-app-icon.instagram {
