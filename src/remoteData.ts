@@ -13,6 +13,35 @@ export interface RemoteState {
 
 const restaurantSlug = import.meta.env.VITE_RESTAURANT_SLUG || 'sweezypop';
 
+type DbOrderLine = { menu_item_id?: string | null; id?: string | null; quantity: number; unit_price?: number; price?: number; name_en?: string; name_de?: string };
+type DbOrder = { id: string; order_number?: string | number; source?: 'menu' | 'pos'; customer_name: string; notes?: string; total: number; status: Order['status']; created_at: string; order_lines?: DbOrderLine[]; lines?: DbOrderLine[] };
+
+function orderFromRow(order: DbOrder): Order {
+  return {
+    id: order.id,
+    orderNumber: String(order.order_number ?? order.id),
+    source: order.source || 'menu',
+    customerName: order.customer_name,
+    notes: order.notes || '',
+    total: Number(order.total || 0),
+    status: order.status,
+    createdAt: order.created_at || '',
+    lines: (order.order_lines || order.lines || []).map((line) => ({
+      item: {
+        id: line.menu_item_id || line.id || 'deleted',
+        categoryId: 'snapshot',
+        name: { en: line.name_en || 'Historical item', de: line.name_de || 'Archivierter Artikel' },
+        description: { en: '', de: '' },
+        price: Number(line.unit_price ?? line.price ?? 0),
+        imageStyle: 'pink',
+        available: false,
+        sortOrder: 0,
+      },
+      quantity: line.quantity,
+    })),
+  };
+}
+
 type DbRestaurant = {
   id: string;
   name: string;
@@ -224,35 +253,12 @@ async function loadPrivateRemoteState(restaurantId: string) {
   if (!profile?.active || profile.must_change_password || profile.restaurant_id !== restaurantId) return { orders: [], users: [] };
 
   const [ordersResult, usersResult] = await Promise.all([
-    supabase.from('orders').select('id,order_number,source,customer_name,notes,total,status,created_at,order_lines(*)').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(500),
+    supabase.from('orders').select('id,order_number,source,customer_name,notes,total,status,created_at,order_lines(*)').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(50),
     profile.role === 'admin' ? supabase.from('profiles').select('*').eq('restaurant_id', restaurantId).order('created_at') : Promise.resolve({ data: [], error: null }),
   ]);
   if (ordersResult.error) throw ordersResult.error;
   if (usersResult.error) throw usersResult.error;
-  const orders: Order[] = (ordersResult.data || []).map((order) => ({
-        id: order.id,
-        orderNumber: String(order.order_number ?? order.id),
-        source: order.source,
-        customerName: order.customer_name,
-        notes: order.notes || '',
-        total: Number(order.total || 0),
-        status: order.status,
-        createdAt: order.created_at || '',
-        lines: (order.order_lines || []).map((line: { menu_item_id: string; quantity: number; unit_price: number; name_en?: string; name_de?: string }) => ({
-          item:
-            ({
-              id: line.menu_item_id,
-              categoryId: 'deleted',
-              name: { en: line.name_en || 'Historical item', de: line.name_de || 'Archivierter Artikel' },
-              description: { en: '', de: '' },
-              price: Number(line.unit_price || 0),
-              imageStyle: 'pink',
-              available: false,
-              sortOrder: 0,
-            } satisfies MenuItem),
-          quantity: line.quantity,
-        })),
-      }));
+  const orders: Order[] = (ordersResult.data || []).map((order) => orderFromRow(order as DbOrder));
 
   const users: AppUser[] = (usersResult.data || []).map((user) => ({
         id: user.id,
@@ -327,6 +333,83 @@ export async function createRemoteOrder(input: OrderInput): Promise<Order> {
 export async function updateRemoteOrderStatus(order: Order, status: Order['status']) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.rpc('set_order_status', { p_id:order.id, p_expected:order.status, p_status:status });
+  if (error) throw error;
+}
+
+export type OrderScope = 'live' | 'today' | 'history' | 'cancelled' | 'all';
+export interface OrderPageFilters {
+  scope: OrderScope;
+  query?: string;
+  status?: Order['status'] | '';
+  source?: 'menu' | 'pos' | '';
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+export interface OrderPage { rows: Order[]; total: number; page: number; pageSize: number; pageCount: number }
+export interface OrderWorkspaceStats { newCount: number; preparingCount: number; todayCount: number; todayRevenue: number }
+export interface OrderTimelineEvent { previousStatus: Order['status']; nextStatus: Order['status']; createdAt: string }
+export interface PosDraftLine { id: string; quantity: number }
+export interface PosDraft { id: string; customerName: string; notes: string; lines: PosDraftLine[]; createdAt: string; updatedAt: string }
+
+export async function loadOrderPage(filters: OrderPageFilters): Promise<OrderPage> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_order_page', {
+    p_scope: filters.scope,
+    p_query: filters.query || '',
+    p_status: filters.status || '',
+    p_source: filters.source || '',
+    p_from: filters.from || null,
+    p_to: filters.to || null,
+    p_page: filters.page || 1,
+    p_page_size: filters.pageSize || 25,
+  });
+  if (error) throw error;
+  const value = data as { rows?: DbOrder[]; total?: number; page?: number; page_size?: number; page_count?: number } | null;
+  return {
+    rows: (value?.rows || []).map(orderFromRow),
+    total: Number(value?.total || 0),
+    page: Number(value?.page || 1),
+    pageSize: Number(value?.page_size || filters.pageSize || 25),
+    pageCount: Number(value?.page_count || 1),
+  };
+}
+
+export async function loadOrderWorkspaceStats(): Promise<OrderWorkspaceStats> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_order_workspace_stats');
+  if (error) throw error;
+  const value = data as Record<string, number> | null;
+  return { newCount:Number(value?.new_count || 0), preparingCount:Number(value?.preparing_count || 0), todayCount:Number(value?.today_count || 0), todayRevenue:Number(value?.today_revenue || 0) };
+}
+
+export async function loadOrderTimeline(orderId: string): Promise<OrderTimelineEvent[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_order_timeline', { p_id:orderId });
+  if (error) throw error;
+  return ((data || []) as Array<Record<string,string>>).map(event => ({
+    previousStatus:event.previous_status as Order['status'], nextStatus:event.next_status as Order['status'], createdAt:event.created_at,
+  }));
+}
+
+export async function loadPosDrafts(): Promise<PosDraft[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('list_pos_drafts');
+  if (error) throw error;
+  return ((data || []) as Array<Record<string,unknown>>).map(draft => ({ id:String(draft.id), customerName:String(draft.customer_name || ''), notes:String(draft.notes || ''), lines:(draft.lines || []) as PosDraftLine[], createdAt:String(draft.created_at), updatedAt:String(draft.updated_at) }));
+}
+
+export async function savePosDraft(draft: { id?: string; customerName: string; notes: string; lines: PosDraftLine[] }): Promise<string> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('save_pos_draft', { p_id:draft.id || null, p_name:draft.customerName, p_notes:draft.notes, p_lines:draft.lines });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function deletePosDraft(id: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('delete_pos_draft', { p_id:id });
   if (error) throw error;
 }
 

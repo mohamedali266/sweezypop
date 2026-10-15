@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -97,4 +97,24 @@ test('deleting a product keeps historical snapshots and disables offers',async (
   assert.equal((await db.query("select available from menu_items where id='combo'")).rows[0].available,false);
   const line=(await db.query('select * from order_lines where order_id=$1',[saved.id])).rows[0];
   assert.equal(line.menu_item_id,null); assert.equal(line.name_de,'Kuchen');
+});
+test('order workspace is paginated, searchable and excludes cancelled revenue',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  const page=(await db.query("select get_order_page('all','Anna','','',null,null,1,1) result")).rows[0].result;
+  assert.equal(page.page_size,1); assert.ok(page.total>=1); assert.equal(page.rows.length,1);
+  const stats=(await db.query('select get_order_workspace_stats() result')).rows[0].result;
+  assert.equal(Number(stats.today_revenue)>=0,true);
+  const cancelled=(await db.query("select coalesce(sum(total),0) total from orders where status='cancelled' and (created_at at time zone 'Europe/Berlin')::date=(now() at time zone 'Europe/Berlin')::date")).rows[0].total;
+  const nonCancelled=(await db.query("select coalesce(sum(total),0) total from orders where status<>'cancelled' and (created_at at time zone 'Europe/Berlin')::date=(now() at time zone 'Europe/Berlin')::date")).rows[0].total;
+  assert.equal(Number(stats.today_revenue),Number(nonCancelled)); assert.ok(Number(cancelled)>=0);
+});
+test('POS drafts are isolated to authenticated restaurant managers',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  const id=(await db.query("select save_pos_draft(null,'Anna','Later',$1::jsonb) id",[JSON.stringify([{id:'drink',quantity:2}])])).rows[0].id;
+  const drafts=(await db.query('select list_pos_drafts() result')).rows[0].result;
+  assert.equal(drafts[0].customer_name,'Anna');
+  await db.query('select delete_pos_draft($1)',[id]);
+  assert.equal((await db.query('select jsonb_array_length(list_pos_drafts()) n')).rows[0].n,0);
+  await db.query("select set_config('test.uid','',false)");
+  await assert.rejects(db.query('select list_pos_drafts()'),/Access denied/);
 });

@@ -3,6 +3,7 @@ import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from '
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { PointOfSale, OrderReceipt } from './PointOfSale';
+import { OrdersWorkspace } from './OrdersWorkspace';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
@@ -1430,7 +1431,7 @@ function Dashboard(props: {
   const todaysOrders = todayOrders(props.orders);
   const revenue = todaysOrders.reduce((sum, order) => sum + order.total, 0);
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
+  const [activeSection, setActiveSection] = useState<DashboardSection>(devPosPreview ? 'pos' : 'overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -1756,15 +1757,7 @@ function Dashboard(props: {
 
           {activeSection === 'orders' && (
             <section className="dashboard-card focus-card" id="orders">
-            <div className="section-head">
-              <h2>{t(props.locale, 'orders')}</h2>
-              <span className="count-pill">{props.orders.length}</span>
-            </div>
-            <div className="orders-list">
-              {props.orders.map((order) => (
-                <OrderCard key={order.id} locale={props.locale} order={order} orders={props.orders} setOrders={props.setOrders} siteName={props.theme.siteName} />
-              ))}
-            </div>
+              <OrdersWorkspace locale={props.locale} siteName={props.theme.siteName} onOrderUpdated={(updated) => props.setOrders(props.orders.map(order => order.id === updated.id ? updated : order))} />
             </section>
           )}
 
