@@ -85,7 +85,7 @@ export function OrderReceipt({ order, siteName, locale }: { order: Order; siteNa
           <p>{text.paymentNotice}</p><p>{text.thanks}</p>
         </article>
       </div>
-    </div>,document.body)}
+    </div>,document.fullscreenElement || document.body)}
   </>;
 }
 
@@ -116,6 +116,7 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const visible = available.filter(i => (category==='all' || category===i.categoryId) && i.name[locale].toLocaleLowerCase(locale).includes(query.toLocaleLowerCase(locale))).sort((a,b) => a.sortOrder-b.sortOrder);
   const total = cart.reduce((sum,line) => sum + Math.round(line.item.price*100)*line.quantity,0)/100;
   const itemCount=cart.reduce((sum,line)=>sum+line.quantity,0);
+  const portalTarget=focusMode&&rootRef.current?rootRef.current:document.body;
   const add = (item:MenuItem) => {
     if (busy) return;
     setSaved(null);
@@ -163,6 +164,7 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
     const editing=(event.target as HTMLElement)?.matches('input,textarea,select');
     if(event.key==='/'&&!editing){event.preventDefault();searchRef.current?.focus();}
     if(event.key==='F2'){event.preventDefault();if(cart.length)setConfirmClear(true);else resetOrder();}
+    if(event.key==='F4'){event.preventDefault();if(cart.length)setConfirmClear(true);}
     if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();void submit();}
   };document.addEventListener('keydown',keys);return()=>document.removeEventListener('keydown',keys);});
 
@@ -192,15 +194,15 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
       <label>{text.name}<input maxLength={120} value={name} onChange={e => setName(e.target.value)} autoComplete="off" /></label>
       <label>{text.notes} <small>({text.optional})</small><textarea maxLength={2000} rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label>
       </fieldset>
-      <div className="pos-basket-secondary"><button disabled={!cart.length||busy} onClick={()=>void holdOrder()}><Archive size={17}/>{text.hold}</button><button disabled={!cart.length||busy} onClick={()=>setConfirmClear(true)}><Eraser size={17}/>{text.clear}</button></div>
+      <div className="pos-basket-secondary"><button disabled={!cart.length||busy} onClick={()=>void holdOrder()}><Archive size={17}/>{text.hold}</button><button title={`${text.clear} (F4)`} disabled={!cart.length||busy} onClick={()=>setConfirmClear(true)}><Eraser size={17}/>{text.clear}</button></div>
       <div className="pos-total"><span>{text.total}</span><strong>{formatEuro(total, locale)}</strong></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <button className="pos-submit" disabled={busy || !cart.length} onClick={() => void submit()}><Check size={19} />{busy ? text.saving : text.confirm}</button>
     </aside>
     <button className="pos-basket-toggle" aria-label={text.openOrder} onClick={() => setBasketOpen(true)}><ShoppingBag size={20} /><span>{itemCount} {text.selectedItems}</span><strong>{formatEuro(total, locale)}</strong></button>
     {basketOpen && <button className="pos-basket-scrim" aria-label={text.closeOrder} onClick={() => setBasketOpen(false)} />}
-    {draftsOpen&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.heldOrders}><section className="pos-drafts"><header><h2>{text.heldOrders}</h2><button aria-label={text.close} onClick={()=>setDraftsOpen(false)}><X/></button></header>{drafts.length?<div>{drafts.map(draft=><article key={draft.id}><div><strong>{draft.customerName||`#${draft.id.slice(0,8)}`}</strong><small>{receiptDate(draft.updatedAt,locale)} · {draft.lines.reduce((sum,line)=>sum+line.quantity,0)} {text.selectedItems}</small></div><button onClick={()=>void resumeDraft(draft)}>{text.resume}</button></article>)}</div>:<p className="pos-empty">{text.noDrafts}</p>}</section></div>,document.body)}
-    {confirmClear&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.confirmClear}><section className="pos-confirm-dialog"><h2>{text.confirmClear}</h2><div><button onClick={()=>setConfirmClear(false)}>{text.keep}</button><button className="danger" onClick={()=>{resetOrder();setConfirmClear(false);}}>{text.clearOrder}</button></div></section></div>,document.body)}
-    {saved&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.successTitle}><section className="pos-success"><span><Check size={34}/></span><h2>{text.successTitle}</h2><p>{text.successText}</p><strong>#{saved.orderNumber||saved.id}</strong><b>{formatEuro(saved.total,locale)}</b><div><OrderReceipt order={saved} siteName={theme.siteName} locale={locale}/><button onClick={resetOrder}><RefreshCw size={18}/>{text.startNext}</button></div></section></div>,document.body)}
+    {draftsOpen&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.heldOrders}><section className="pos-drafts"><header><h2>{text.heldOrders}</h2><button aria-label={text.close} onClick={()=>setDraftsOpen(false)}><X/></button></header>{drafts.length?<div>{drafts.map(draft=><article key={draft.id}><div><strong>{draft.customerName||`#${draft.id.slice(0,8)}`}</strong><small>{receiptDate(draft.updatedAt,locale)} · {draft.lines.reduce((sum,line)=>sum+line.quantity,0)} {text.selectedItems}</small></div><button onClick={()=>void resumeDraft(draft)}>{text.resume}</button></article>)}</div>:<p className="pos-empty">{text.noDrafts}</p>}</section></div>,portalTarget)}
+    {confirmClear&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.confirmClear}><section className="pos-confirm-dialog"><h2>{text.confirmClear}</h2><div><button onClick={()=>setConfirmClear(false)}>{text.keep}</button><button className="danger" onClick={()=>{resetOrder();setConfirmClear(false);}}>{text.clearOrder}</button></div></section></div>,portalTarget)}
+    {saved&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.successTitle}><section className="pos-success"><span><Check size={34}/></span><h2>{text.successTitle}</h2><p>{text.successText}</p><strong>#{saved.orderNumber||saved.id}</strong><b>{formatEuro(saved.total,locale)}</b><div><OrderReceipt order={saved} siteName={theme.siteName} locale={locale}/><button onClick={resetOrder}><RefreshCw size={18}/>{text.startNext}</button></div></section></div>,portalTarget)}
   </section>;
 }
