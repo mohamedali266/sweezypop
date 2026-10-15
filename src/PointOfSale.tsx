@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Check, Eraser, Maximize2, Minimize2, Minus, Plus, Printer, RefreshCw, Search, ShoppingBag, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import type { CartLine, Category, Locale, MenuItem, Order, ThemeSettings } from './types';
@@ -90,6 +90,7 @@ export function OrderReceipt({ order, siteName, locale }: { order: Order; siteNa
 }
 
 export function PointOfSale({ items, categories, theme, locale, onCreated }: { items: MenuItem[]; categories: Category[]; theme: ThemeSettings; locale: Locale; onCreated: (order: Order) => void }) {
+  const devFocusPreview=import.meta.env.DEV&&new URLSearchParams(window.location.search).get('focus')==='1';
   const rootRef=useRef<HTMLElement>(null);
   const searchRef=useRef<HTMLInputElement>(null);
   const [query,setQuery] = useState('');
@@ -101,7 +102,7 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const [error,setError] = useState('');
   const [saved,setSaved] = useState<Order | null>(null);
   const [basketOpen,setBasketOpen] = useState(false);
-  const [focusMode,setFocusMode]=useState(false);
+  const [focusMode,setFocusMode]=useState(devFocusPreview);
   const [online,setOnline]=useState(typeof navigator==='undefined'||navigator.onLine);
   const [clock,setClock]=useState(new Date());
   const [drafts,setDrafts]=useState<PosDraft[]>([]);
@@ -165,11 +166,10 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
     if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();void submit();}
   };document.addEventListener('keydown',keys);return()=>document.removeEventListener('keydown',keys);});
 
-  return <section ref={rootRef} className={`pos ${focusMode?'pos-focus-mode':''}`} lang={locale} aria-label={text.pos}>
+  return <section ref={rootRef} className={`pos ${focusMode?'pos-focus-mode':''}`} lang={locale} aria-label={text.pos} style={{'--pos-bg':theme.background,'--pos-surface':theme.surface,'--pos-text':theme.text,'--pos-muted':theme.mutedText,'--pos-border':theme.border} as CSSProperties}>
     <header className="pos-command-bar">
-      <div><strong>{theme.siteName}</strong><span className={online?'online':'offline'}>{online?<Wifi size={15}/>:<WifiOff size={15}/>} {online?text.online:text.offline}</span><time>{clock.toLocaleTimeString(locale==='de'?'de-DE':'en-DE',{hour:'2-digit',minute:'2-digit'})}</time></div>
-      <small>{text.shortcutHelp}</small>
-      <div className="pos-command-actions"><button onClick={()=>cart.length?setConfirmClear(true):resetOrder()}><RefreshCw size={17}/>{text.newOrder}</button><button disabled={!cart.length||busy} onClick={()=>void holdOrder()}><Archive size={17}/>{text.hold}</button><button onClick={()=>setDraftsOpen(true)}><Archive size={17}/>{text.heldOrders}<span className="command-count">{drafts.length}</span></button><button title={focusMode?text.exitFocus:text.focusMode} onClick={()=>void toggleFocus()}>{focusMode?<Minimize2 size={18}/>:<Maximize2 size={18}/>}<span className="command-label">{focusMode?text.exitFocus:text.focusMode}</span></button></div>
+      <div className="pos-command-identity"><strong>{theme.siteName}</strong><span className={online?'online':'offline'}>{online?<Wifi size={15}/>:<WifiOff size={15}/>} {online?text.online:text.offline}</span><time>{clock.toLocaleTimeString(locale==='de'?'de-DE':'en-DE',{hour:'2-digit',minute:'2-digit'})}</time></div>
+      <div className="pos-command-actions"><button className="primary new-order" onClick={()=>cart.length?setConfirmClear(true):resetOrder()}><RefreshCw size={17}/><span>{text.newOrder}</span></button><button className="hold-order" aria-label={text.hold} title={text.hold} disabled={!cart.length||busy} onClick={()=>void holdOrder()}><Archive size={17}/><span>{text.hold}</span></button><button className="draft-orders" aria-label={text.heldOrders} title={text.heldOrders} onClick={()=>setDraftsOpen(true)}><Archive size={17}/><span>{text.heldOrders}</span><b className="command-count">{drafts.length}</b></button><button className="icon-only" aria-label={focusMode?text.exitFocus:text.focusMode} title={focusMode?text.exitFocus:text.focusMode} onClick={()=>void toggleFocus()}>{focusMode?<Minimize2 size={19}/>:<Maximize2 size={19}/>}</button></div>
     </header>
     <div className="pos-catalog">
       <header className="pos-heading"><div><h2>{text.pos}</h2><span>{available.length} {text.available}</span></div><ShoppingBag size={24} /></header>
