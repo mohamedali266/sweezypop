@@ -192,6 +192,9 @@ const messages: Record<Locale, Messages> = {
     installDashboardCopy: 'Add the owner dashboard to this device for faster access.',
     installIosCopy: 'On iPhone, tap Share, then Add to Home Screen.',
     install: 'Install',
+    installManualTitle: 'Install from your browser',
+    installManualSteps: 'Open the browser menu and choose Install app or Add to Home Screen. On iPhone, use Share, then Add to Home Screen.',
+    gotIt: 'Got it',
   },
   de: {
     menu: 'Speisekarte',
@@ -382,6 +385,9 @@ const messages: Record<Locale, Messages> = {
     installDashboardCopy: 'Fuege das Owner-Dashboard fuer schnellen Zugriff zu diesem Geraet hinzu.',
     installIosCopy: 'Auf dem iPhone: Teilen antippen, dann Zum Home-Bildschirm hinzufuegen.',
     install: 'Installieren',
+    installManualTitle: 'Ueber den Browser installieren',
+    installManualSteps: 'Browser-Menue oeffnen und App installieren oder Zum Home-Bildschirm waehlen. Auf dem iPhone: Teilen und danach Zum Home-Bildschirm.',
+    gotIt: 'Verstanden',
   },
 };
 

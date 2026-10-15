@@ -103,7 +103,7 @@ const storageKeys = {
   theme: 'sweezypop.theme',
   hours: 'sweezypop.hours',
   dashboardView: 'sweezypop.dashboardView',
-  pwaInstallDismissed: 'sweezypop.pwaInstallDismissed',
+  pwaInstallDismissed: 'sweezypop.pwaInstallDismissed.v2',
 } as const;
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -253,6 +253,7 @@ function AppContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const touchStartY = useRef<number | null>(null);
   const baseline = useRef<RemoteState | null>(null);
@@ -349,6 +350,7 @@ function AppContent() {
     const onInstalled = () => {
       setIsStandalone(true);
       setShowInstallBanner(false);
+      setShowInstallGuide(false);
       setInstallPrompt(null);
     };
 
@@ -631,17 +633,23 @@ function AppContent() {
   };
 
   const installDashboardApp = async () => {
-    if (!installPrompt) return;
+    if (!installPrompt) {
+      setShowInstallGuide(true);
+      return;
+    }
     await installPrompt.prompt();
     const choice = await installPrompt.userChoice;
+    setInstallPrompt(null);
     if (choice.outcome === 'accepted') {
       setShowInstallBanner(false);
-      setInstallPrompt(null);
+    } else {
+      setShowInstallGuide(true);
     }
   };
 
   const dismissInstallBanner = () => {
     saveStored(storageKeys.pwaInstallDismissed, true);
+    setShowInstallGuide(false);
     setShowInstallBanner(false);
   };
 
@@ -670,7 +678,9 @@ function AppContent() {
           locale={locale}
           theme={theme}
           canInstall={Boolean(installPrompt)}
+          showGuide={showInstallGuide}
           onInstall={() => void installDashboardApp()}
+          onDismissGuide={() => setShowInstallGuide(false)}
           onDismiss={dismissInstallBanner}
         />
       )}
@@ -794,13 +804,17 @@ function InstallAppBanner({
   locale,
   theme,
   canInstall,
+  showGuide,
   onInstall,
+  onDismissGuide,
   onDismiss,
 }: {
   locale: Locale;
   theme: ThemeSettings;
   canInstall: boolean;
+  showGuide: boolean;
   onInstall: () => void;
+  onDismissGuide: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -810,14 +824,19 @@ function InstallAppBanner({
         <strong>{t(locale, 'installDashboard')}</strong>
         <p>{canInstall ? t(locale, 'installDashboardCopy') : t(locale, 'installIosCopy')}</p>
       </div>
-      {canInstall && (
-        <button type="button" className="small-action" onClick={onInstall}>
-          {t(locale, 'install')}
-        </button>
-      )}
+      <button type="button" className="small-action" onClick={onInstall}>
+        {t(locale, 'install')}
+      </button>
       <button type="button" className="ghost-icon" onClick={onDismiss} aria-label={t(locale, 'close')}>
         x
       </button>
+      {showGuide && !canInstall && (
+        <div className="install-guide" role="status">
+          <strong>{t(locale, 'installManualTitle')}</strong>
+          <p>{t(locale, 'installManualSteps')}</p>
+          <button type="button" onClick={onDismissGuide}>{t(locale, 'gotIt')}</button>
+        </div>
+      )}
     </aside>
   );
 }
@@ -1430,7 +1449,7 @@ function Dashboard(props: {
 
   const sidebarItems: Array<{ id: DashboardSection; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: t(props.locale, 'dashboard'), icon: Settings },
-    { id: 'pos', label: 'Kasse / POS', icon: ShoppingBag },
+    { id: 'pos', label: props.locale === 'de' ? 'Kasse / POS' : 'Point of sale', icon: ShoppingBag },
     { id: 'items', label: t(props.locale, 'manageItems'), icon: ShoppingBag },
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
@@ -1654,7 +1673,7 @@ function Dashboard(props: {
             </>
           )}
 
-          {activeSection === 'pos' && <PointOfSale items={props.items} categories={props.categories} theme={props.theme} onCreated={(order) => props.setOrders([order,...props.orders])} />}
+          {activeSection === 'pos' && <PointOfSale items={props.items} categories={props.categories} theme={props.theme} locale={props.locale} onCreated={(order) => props.setOrders([order,...props.orders])} />}
           {activeSection === 'items' && (
             <ItemsManager
               locale={props.locale}
@@ -1774,7 +1793,7 @@ function OrderCard({ locale, order, orders, setOrders, siteName }: { locale: Loc
         </p>
         {order.notes && <small>{order.notes}</small>}
         <small>{order.lines.map((line) => `${line.quantity}x ${line.item.name[locale]}`).join(', ')}</small>
-        <OrderReceipt order={order} siteName={siteName} />
+        <OrderReceipt order={order} siteName={siteName} locale={locale} />
         {error && <p role="alert" className="form-error">{error}</p>}
       </div>
       <div>
