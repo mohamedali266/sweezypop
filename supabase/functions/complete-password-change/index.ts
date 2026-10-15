@@ -5,7 +5,15 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
   try {
-    const { client, profile } = await getRequesterProfile(request);
+    const { client, profile, authUser } = await getRequesterProfile(request);
+    const { password } = await request.json();
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128 ||
+      !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^a-zA-Z0-9]/.test(password)) {
+      return jsonResponse({ error: 'Use 12-128 characters with uppercase, lowercase, a number and a symbol.' }, 400);
+    }
+    if (!profile.must_change_password) return jsonResponse({ error: 'No password change pending.' }, 400);
+    const { error: passwordError } = await client.auth.admin.updateUserById(authUser.id, { password });
+    if (passwordError) throw passwordError;
     const { error } = await client
       .from('profiles')
       .update({

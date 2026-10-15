@@ -2,6 +2,8 @@ import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from 'react';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
+import { PointOfSale, OrderReceipt } from './PointOfSale';
+import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
   CalendarClock,
@@ -35,11 +37,14 @@ import { t } from './i18n';
 import {
   completeTemporaryPasswordChange,
   createAdminUser,
+  deleteAdminUser,
   createRemoteOrder,
   loadRemoteState,
   resetAdminUserPassword,
   saveRemoteState,
   saveRemoteSiteSettings,
+  saveRemoteUsers,
+  updateRemoteOrderStatus,
   type AdminUserPayload,
   type RemoteState,
 } from './remoteData';
@@ -47,7 +52,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'password-change';
-type DashboardSection = 'overview' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -55,8 +60,8 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
-const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' });
-const isOfferItem = (item: MenuItem) => item.categoryId === 'offers';
+const currency = euro;
+const isOfferItem = (item: MenuItem) => item.categoryId === 'offers' || Boolean(item.includedItemIds?.length);
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
 const socialPlatformOptions = [
   { value: 'instagram', label: 'Instagram', iconSlug: 'instagram' },
@@ -69,14 +74,14 @@ const socialPlatformOptions = [
   { value: 'custom', label: 'Custom', iconSlug: '' },
 ] as const;
 const socialPlatforms = new Map(socialPlatformOptions.map((platform) => [platform.value, platform]));
+const devPosPreview = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === 'pos';
 
 function itemDescription(item: MenuItem, locale: Locale) {
   return item.description[locale].split('__offer_meta__:')[0].trim();
 }
 
 function parseImportedPrice(value: unknown) {
-  const normalized = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
-  return Number(normalized || 0);
+  return parsePrice(value);
 }
 
 function normalizeContactNumber(countryCode: string, phoneNumber: string) {
@@ -112,7 +117,7 @@ function loadStored<T>(key: string, fallback: T): T {
 }
 
 function saveStored(key: string, value: unknown) {
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage is optional. */ }
 }
 
 function safeArray<T>(value: unknown, fallback: T[]): T[] {
@@ -220,7 +225,7 @@ async function readMenuRowsFromWorkbook(file: File) {
 }
 
 function AppContent() {
-  const [view, setView] = useState<View>('menu');
+  const [view, setView] = useState<View>(devPosPreview ? 'admin' : 'menu');
   const [showLoader, setShowLoader] = useState(true);
   const [locale, setLocale] = useState<Locale>(() => loadStored<unknown>('sweezypop.locale', 'de') === 'en' ? 'en' : 'de');
   useEffect(() => {
@@ -232,16 +237,16 @@ function AppContent() {
     }
   }, [locale]);
   const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
-  const [items, setItems] = useState<MenuItem[]>(() => safeArray(loadStored(storageKeys.items, seedItems), seedItems));
-  const [categories, setCategories] = useState<Category[]>(() => safeArray(loadStored(storageKeys.categories, seedCategories), seedCategories));
-  const [orders, setOrders] = useState<Order[]>(() => safeArray(loadStored(storageKeys.orders, initialOrders), initialOrders));
-  const [users, setUsers] = useState<AppUser[]>(() => safeArray(loadStored(storageKeys.users, seedUsers), seedUsers));
+  const [items, setItems] = useState<MenuItem[]>(devPosPreview ? seedItems : []);
+  const [categories, setCategories] = useState<Category[]>(devPosPreview ? seedCategories : []);
+  const [orders, setOrders] = useState<Order[]>(devPosPreview ? initialOrders : []);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
   const [hours, setHours] = useState<OpeningHour[]>(() => safeArray(loadStored(storageKeys.hours, seedHours), seedHours));
   const [activeCategory, setActiveCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(null);
+  const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(devPosPreview ? 'admin' : null);
   const [submittedOrderId, setSubmittedOrderId] = useState('');
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
@@ -250,8 +255,16 @@ function AppContent() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const touchStartY = useRef<number | null>(null);
+  const baseline = useRef<RemoteState | null>(null);
+  const saveInFlight = useRef(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [syncVersion, setSyncVersion] = useState(0);
+  const requestAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
+  const orderInFlight = useRef(false);
 
   const applyRemoteState = (remoteState: RemoteState) => {
+    baseline.current = remoteState;
     setCategories(safeArray(remoteState.categories, seedCategories));
     setItems(safeArray(remoteState.items, seedItems));
     setOrders(safeArray(remoteState.orders, initialOrders));
@@ -280,8 +293,7 @@ function AppContent() {
     if (remoteState) applyRemoteState(remoteState);
 
     setAuthRole(profile.role);
-    const storedView = loadStored<View>(storageKeys.dashboardView, profile.role);
-    setView(profile.must_change_password ? 'password-change' : storedView === 'admin' || storedView === 'owner' ? storedView : profile.role);
+    setView(profile.must_change_password ? 'password-change' : profile.role);
   };
 
   useEffect(() => {
@@ -358,7 +370,7 @@ function AppContent() {
   }, [authRole, isStandalone]);
 
   useEffect(() => {
-    void restoreDashboardSession();
+    void restoreDashboardSession().catch(() => setLoadError('Sitzung konnte nicht geladen werden. Bitte erneut anmelden.'));
     // Restore the persisted Supabase session once on boot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -378,8 +390,10 @@ function AppContent() {
   useEffect(() => saveStored(storageKeys.layout, layout), [layout]);
   useEffect(() => saveStored(storageKeys.items, items), [items]);
   useEffect(() => saveStored(storageKeys.categories, categories), [categories]);
-  useEffect(() => saveStored(storageKeys.orders, orders), [orders]);
-  useEffect(() => saveStored(storageKeys.users, users), [users]);
+  useEffect(() => {
+    window.localStorage.removeItem(storageKeys.orders);
+    window.localStorage.removeItem(storageKeys.users);
+  }, []);
   useEffect(() => saveStored(storageKeys.theme, theme), [theme]);
   useEffect(() => saveStored(storageKeys.hours, hours), [hours]);
   useEffect(() => {
@@ -437,8 +451,6 @@ function AppContent() {
         const value = JSON.parse(event.newValue);
         if (event.key === storageKeys.items) setItems(safeArray(value, seedItems));
         if (event.key === storageKeys.categories) setCategories(safeArray(value, seedCategories));
-        if (event.key === storageKeys.orders) setOrders(safeArray(value, initialOrders));
-        if (event.key === storageKeys.users) setUsers(safeArray(value, seedUsers));
         if (event.key === storageKeys.theme) setTheme(normalizeThemeSettings(value));
         if (event.key === storageKeys.hours) setHours(safeArray(value, seedHours));
         if (event.key === storageKeys.layout) setLayout(normalizeLayout(value));
@@ -459,7 +471,8 @@ function AppContent() {
         applyRemoteState(remoteState);
       })
       .catch((error: unknown) => {
-        console.warn('Supabase load failed. Using local demo data.', error);
+        console.warn('Supabase load failed.', error);
+        setLoadError('Daten konnten nicht geladen werden. Bitte neu laden.');
       })
       .finally(() => setRemoteReady(true));
     // Run once on boot. Fallback values are only used when remote rows are empty.
@@ -467,8 +480,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!configuredMenuUrl || theme.menuUrl === configuredMenuUrl) return;
-    setTheme((current) => ({ ...current, menuUrl: configuredMenuUrl }));
+    if (configuredMenuUrl && !theme.menuUrl) setTheme((current) => ({ ...current, menuUrl: configuredMenuUrl }));
   }, [theme.menuUrl]);
 
   useEffect(() => {
@@ -485,32 +497,69 @@ function AppContent() {
   }, [activeCategory, categories]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !remoteReady || !authRole) return;
+    if (devPosPreview || !isSupabaseConfigured || !remoteReady || !authRole || !baseline.current || saveInFlight.current) return;
+    const previous = baseline.current;
+    if (JSON.stringify([categories,items,hours,users]) === JSON.stringify([previous.categories,previous.items,previous.hours,previous.users])) return;
+    setSaveMessage('Nicht gespeicherte Änderungen');
     const syncId = window.setTimeout(() => {
-      saveRemoteState({ categories, items, orders, users, theme, hours, layout }).catch((error: unknown) => {
-        console.warn('Supabase save failed. Check auth, RLS policies, and env variables.', error);
-      });
+      saveInFlight.current = true;
+      setSaveMessage('Wird gespeichert …');
+      const snapshot = { categories, items, orders, users, theme, hours, layout };
+      saveRemoteState(snapshot, previous).then(async () => {
+        baseline.current = { ...snapshot, users:previous.users };
+        await saveRemoteUsers(users,previous.users);
+        baseline.current = snapshot;
+        setSaveMessage('Gespeichert');
+        setSyncVersion((v) => v + 1);
+      }).catch(() => {
+        setSaveMessage('Nicht gespeichert. Verbindung oder Datenkonflikt: Bitte neu laden und erneut versuchen.');
+      }).finally(() => { saveInFlight.current = false; });
     }, 900);
 
     return () => window.clearTimeout(syncId);
     // Theme and layout are saved explicitly from Appearance to avoid broad dashboard writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authRole, categories, hours, items, orders, remoteReady, users]);
+  }, [authRole, categories, hours, items, users, remoteReady, syncVersion]);
 
   const persistSiteSettings = async (nextTheme: ThemeSettings, nextLayout: MenuLayout) => {
-    setTheme(nextTheme);
-    setLayout(nextLayout);
     if (isSupabaseConfigured && authRole) {
       await saveRemoteSiteSettings(nextTheme, nextLayout);
     }
+    setTheme(nextTheme);
+    setLayout(nextLayout);
   };
 
+  useEffect(() => {
+    if (!remoteReady || !isSupabaseConfigured) return;
+    let stopped = false;
+    let busy = false;
+    const refresh = async () => {
+      if (busy || saveInFlight.current || document.hidden) return;
+      busy = true;
+      try {
+        const remote = await loadRemoteState({ categories, items, orders:[], users:[], theme, hours, layout });
+        if (!remote || stopped) return;
+        if (!authRole) applyRemoteState(remote);
+        else { setOrders(remote.orders); }
+        setLoadError('');
+      } catch { if (!stopped) setLoadError('Verbindung unterbrochen. Daten werden erneut geladen.'); }
+      finally { busy = false; }
+    };
+    const interval = window.setInterval(() => void refresh(), 5000);
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    return () => { stopped = true; window.clearInterval(interval); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
+    // Current catalog edits must never be overwritten by background order refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authRole, remoteReady]);
+
   const addToCart = (item: MenuItem) => {
+    if (!canOrder(item, items)) return;
     setSubmittedOrderId('');
     setCart((current) => {
       const existing = current.find((line) => line.item.id === item.id);
       if (existing) {
-        return current.map((line) => (line.item.id === item.id ? { ...line, quantity: line.quantity + 1 } : line));
+        return current.map((line) => (line.item.id === item.id ? { ...line, quantity: Math.min(99,line.quantity + 1) } : line));
       }
       return [...current, { item, quantity: 1 }];
     });
@@ -519,7 +568,7 @@ function AppContent() {
   const updateCartQuantity = (itemId: string, delta: number) => {
     setCart((current) =>
       current
-        .map((line) => (line.item.id === itemId ? { ...line, quantity: line.quantity + delta } : line))
+        .map((line) => (line.item.id === itemId ? { ...line, quantity: Math.min(99,line.quantity + delta) } : line))
         .filter((line) => line.quantity > 0),
     );
   };
@@ -528,28 +577,17 @@ function AppContent() {
     setCart((current) => current.filter((line) => line.item.id !== itemId));
   };
 
-  const submitOrder = (payload: { name: string; notes: string }) => {
-    if (!cart.length) return;
-    const total = cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
-    const order: Order = {
-      id: `SP-${Math.floor(1100 + Math.random() * 9000)}`,
-      customerName: payload.name || 'Guest',
-      address: '',
-      phone: '',
-      notes: payload.notes,
-      lines: cart,
-      total,
-      status: 'new',
-      createdAt: 'Just now',
-    };
-    setOrders((current) => [order, ...current]);
-    if (isSupabaseConfigured) {
-      createRemoteOrder(order).catch((error: unknown) => {
-        console.warn('Supabase order insert failed. Order remains stored locally.', error);
-      });
-    }
-    setCart([]);
-    setSubmittedOrderId(order.id);
+  const submitOrder = async (payload: { name: string; notes: string }) => {
+    if (!cart.length || orderInFlight.current) throw new Error('Bitte warten.');
+    const fingerprint = JSON.stringify({ ...payload, lines:cart.map(l => [l.item.id,l.quantity]) });
+    if (requestAttempt.current?.fingerprint !== fingerprint) requestAttempt.current = { fingerprint, key:crypto.randomUUID() };
+    orderInFlight.current = true;
+    try {
+      const order = await createRemoteOrder({ ...payload, lines:cart, requestKey:requestAttempt.current.key });
+      setCart([]);
+      setSubmittedOrderId(order.orderNumber || order.id);
+      requestAttempt.current = null;
+    } finally { orderInFlight.current = false; }
   };
 
   const handleLogin = async (email: string, password: string): Promise<string | null> => {
@@ -579,18 +617,14 @@ function AppContent() {
       return null;
     }
 
-    const matchedUser = users.find((user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.active);
-    const role = matchedUser?.role || (email.toLowerCase().includes('admin') ? 'admin' : 'owner');
-    setAuthRole(role);
-    setView(role);
-    saveStored(storageKeys.dashboardView, role);
-    window.history.replaceState(null, '', window.location.pathname);
-    return null;
+    return 'Anmeldung nicht verfügbar. Supabase-Konfiguration fehlt.';
   };
 
   const handleLogout = () => {
     if (supabase) void supabase.auth.signOut();
     setAuthRole(null);
+    setOrders([]);
+    setUsers([]);
     setView('menu');
     window.localStorage.removeItem(storageKeys.dashboardView);
     window.history.replaceState(null, '', window.location.pathname);
@@ -631,7 +665,7 @@ function AppContent() {
     >
       {showLoader && <LoaderScreen />}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
-      {authRole && showInstallBanner && !isStandalone && (
+      {authRole && showInstallBanner && !isStandalone && !devPosPreview && (
         <InstallAppBanner
           locale={locale}
           theme={theme}
@@ -641,6 +675,8 @@ function AppContent() {
         />
       )}
       <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
+      {(loadError || (authRole && saveMessage)) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
+      {!isSupabaseConfigured && !devPosPreview && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
       {view === 'menu' ? (
         <MenuPage
           locale={locale}
@@ -888,11 +924,8 @@ function PasswordChangePage({ locale, theme, onComplete, onLogout }: { locale: L
     }
 
     setSaving(true);
-    supabase.auth
-      .updateUser({ password })
-      .then(async ({ error: updateError }) => {
-        if (updateError) throw updateError;
-        await completeTemporaryPasswordChange();
+    completeTemporaryPasswordChange(password)
+      .then(() => {
         onComplete();
       })
       .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : t(locale, 'passwordChangeFailed')))
@@ -948,19 +981,20 @@ function MenuPage(props: {
   addToCart: (item: MenuItem) => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; notes: string }) => void;
+  submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
   submittedOrderId: string;
 }) {
   const filtered = useMemo(() => {
     return props.items
-      .filter((item) => item.available)
+      .filter((item) => canOrder(item, props.items))
       .filter((item) => props.activeCategory === 'all' || item.categoryId === props.activeCategory)
       .filter((item) => `${item.name[props.locale]} ${item.description[props.locale]}`.toLowerCase().includes(props.query.toLowerCase()))
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }, [props.activeCategory, props.items, props.locale, props.query]);
 
-  const today = props.hours.find((hour) => hour.enabled);
-  const featuredOffers = props.items.filter((item) => item.available && isOfferItem(item)).sort((a, b) => a.sortOrder - b.sortOrder);
+  const day = new Intl.DateTimeFormat('en-US', { timeZone:'Europe/Berlin', weekday:'long' }).format(new Date());
+  const today = props.hours.find((hour) => hour.day === day && hour.enabled);
+  const featuredOffers = filtered.filter(isOfferItem);
   const showFeaturedOffers = featuredOffers.length > 0 && (props.activeCategory === 'all' || props.activeCategory === 'offers');
   const visibleMenuItems = props.activeCategory === 'all' ? filtered.filter((item) => !isOfferItem(item)) : props.activeCategory === 'offers' ? [] : filtered;
 
@@ -973,7 +1007,7 @@ function MenuPage(props: {
           <div className="plate plate-three" />
         </div>
         <div className="hero-copy">
-          <span className="eyebrow">{t(props.locale, 'openNow')} {today ? `${today.open}-${today.close}` : ''}</span>
+          <span className="eyebrow">{today ? `${props.locale === 'de' ? 'Heute' : 'Today'} ${today.open}–${today.close}` : props.locale === 'de' ? 'Heute geschlossen' : 'Closed today'}</span>
           <h1>{props.theme.siteName}</h1>
           <p>{t(props.locale, 'heroCopy')}</p>
           <div className="hero-actions">
@@ -1241,26 +1275,31 @@ function CartPanel({
   cart: CartLine[];
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; notes: string }) => void;
+  submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
   submittedOrderId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const total = cart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
 
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
+    if (submitting) return;
     if (!name.trim()) {
       setFormError(t(locale, 'nameRequired'));
       return;
     }
     setFormError('');
-    submitOrder({ name: name.trim(), notes: notes.trim() });
-    setOpen(false);
-    setName('');
-    setNotes('');
+    setSubmitting(true);
+    try {
+      await submitOrder({ name: name.trim(), notes: notes.trim() });
+      setOpen(false); setName(''); setNotes('');
+    } catch {
+      setFormError(locale === 'de' ? 'Bestellung nicht bestätigt. Bitte erneut versuchen. Ihr Warenkorb bleibt erhalten.' : 'Order not confirmed. Please retry. Your basket has been kept.');
+    } finally { setSubmitting(false); }
   };
 
   if (!cart.length && !submittedOrderId) {
@@ -1326,8 +1365,8 @@ function CartPanel({
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={t(locale, 'notes')} />
             </div>
             {formError && <p className="form-error">{formError}</p>}
-            <button className="primary-action full" onClick={handleSubmitOrder}>
-              {t(locale, 'checkout')}
+            <button className="primary-action full" disabled={submitting} onClick={() => void handleSubmitOrder()}>
+              {submitting ? (locale === 'de' ? 'Wird gesendet …' : 'Submitting …') : t(locale, 'checkout')}
             </button>
           </aside>
         </div>
@@ -1369,7 +1408,8 @@ function Dashboard(props: {
   hours: OpeningHour[];
   setHours: (hours: OpeningHour[]) => void;
 }) {
-  const revenue = props.orders.reduce((sum, order) => sum + order.total, 0);
+  const todaysOrders = todayOrders(props.orders);
+  const revenue = todaysOrders.reduce((sum, order) => sum + order.total, 0);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1390,6 +1430,7 @@ function Dashboard(props: {
 
   const sidebarItems: Array<{ id: DashboardSection; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: t(props.locale, 'dashboard'), icon: Settings },
+    { id: 'pos', label: 'Kasse / POS', icon: ShoppingBag },
     { id: 'items', label: t(props.locale, 'manageItems'), icon: ShoppingBag },
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
@@ -1581,7 +1622,7 @@ function Dashboard(props: {
             <>
               <section className="stats-grid">
                 <StatCard label={t(props.locale, 'revenueToday')} value={currency.format(revenue)} icon={<BadgeDollarSign />} />
-                <StatCard label={t(props.locale, 'ordersToday')} value={String(props.orders.length)} icon={<ShoppingBag />} />
+                <StatCard label={t(props.locale, 'ordersToday')} value={String(todaysOrders.length)} icon={<ShoppingBag />} />
                 <StatCard label={t(props.locale, 'availableItems')} value={String(props.items.filter((item) => item.available).length)} icon={<Check />} />
                 <StatCard label={t(props.locale, 'totalCategories')} value={String(props.categories.length)} icon={<List />} />
               </section>
@@ -1606,13 +1647,14 @@ function Dashboard(props: {
                 </div>
                 <div className="orders-list">
                   {props.orders.slice(0, 3).map((order) => (
-                    <OrderCard key={order.id} locale={props.locale} order={order} orders={props.orders} setOrders={props.setOrders} />
+                    <OrderCard key={order.id} locale={props.locale} order={order} orders={props.orders} setOrders={props.setOrders} siteName={props.theme.siteName} />
                   ))}
                 </div>
               </section>
             </>
           )}
 
+          {activeSection === 'pos' && <PointOfSale items={props.items} categories={props.categories} theme={props.theme} onCreated={(order) => props.setOrders([order,...props.orders])} />}
           {activeSection === 'items' && (
             <ItemsManager
               locale={props.locale}
@@ -1701,7 +1743,7 @@ function Dashboard(props: {
             </div>
             <div className="orders-list">
               {props.orders.map((order) => (
-                <OrderCard key={order.id} locale={props.locale} order={order} orders={props.orders} setOrders={props.setOrders} />
+                <OrderCard key={order.id} locale={props.locale} order={order} orders={props.orders} setOrders={props.setOrders} siteName={props.theme.siteName} />
               ))}
             </div>
             </section>
@@ -1714,23 +1756,34 @@ function Dashboard(props: {
   );
 }
 
-function OrderCard({ locale, order, orders, setOrders }: { locale: Locale; order: Order; orders: Order[]; setOrders: (orders: Order[]) => void }) {
+function OrderCard({ locale, order, orders, setOrders, siteName }: { locale: Locale; order: Order; orders: Order[]; setOrders: (orders: Order[]) => void; siteName: string }) {
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState('');
+  const changeStatus = async (status: Order['status']) => {
+    setBusy(true); setError('');
+    try { await updateRemoteOrderStatus(order,status); setOrders(orders.map(o => o.id===order.id ? {...o,status} : o)); }
+    catch { setError(locale === 'de' ? 'Status nicht gespeichert. Bitte aktualisieren.' : 'Status not saved. Please refresh.'); }
+    finally { setBusy(false); }
+  };
   return (
     <article className="order-card">
       <div>
-        <strong>{order.id}</strong>
+        <strong>#{order.orderNumber || order.id}</strong>
         <p>
           {order.customerName}
         </p>
         {order.notes && <small>{order.notes}</small>}
         <small>{order.lines.map((line) => `${line.quantity}x ${line.item.name[locale]}`).join(', ')}</small>
+        <OrderReceipt order={order} siteName={siteName} />
+        {error && <p role="alert" className="form-error">{error}</p>}
       </div>
       <div>
         <strong>{currency.format(order.total)}</strong>
-        <select value={order.status} onChange={(event) => setOrders(orders.map((current) => (current.id === order.id ? { ...current, status: event.target.value as Order['status'] } : current)))}>
-          <option value="new">{t(locale, 'statusNew')}</option>
+        <select aria-label={locale === 'de' ? 'Bestellstatus' : 'Order status'} disabled={busy || order.status==='done' || order.status==='cancelled'} value={order.status} onChange={(event) => void changeStatus(event.target.value as Order['status'])}>
+          <option value="new" disabled={order.status!=='new'}>{t(locale, 'statusNew')}</option>
           <option value="preparing">{t(locale, 'statusPreparing')}</option>
-          <option value="done">{t(locale, 'statusDone')}</option>
+          <option value="done" disabled={order.status==='new'}>{t(locale, 'statusDone')}</option>
+          <option value="cancelled">{locale === 'de' ? 'Storniert' : 'Cancelled'}</option>
         </select>
       </div>
     </article>
@@ -2554,23 +2607,6 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
     setCreating(true);
     setActionError('');
 
-    if (!isSupabaseConfigured) {
-      const localUser: AppUser = {
-        id: `u-${Date.now()}`,
-        name: form.name,
-        email: form.email,
-        role: form.role,
-        restaurant: form.restaurant,
-        active: form.active,
-        mustChangePassword: true,
-      };
-      setUsers([...users, localUser]);
-      setTemporaryPassword('DemoOnly-ChangeMe!42');
-      setCreating(false);
-      setFormOpen(false);
-      return;
-    }
-
     createAdminUser(form)
       .then(({ user, temporaryPassword: password }) => {
         setUsers([...users, user]);
@@ -2584,18 +2620,19 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
 
   const resetPassword = (user: AppUser) => {
     setActionError('');
-    if (!isSupabaseConfigured) {
-      setTemporaryPassword('DemoOnly-Reset!42');
-      setUsers(users.map((current) => (current.id === user.id ? { ...current, mustChangePassword: true } : current)));
-      return;
-    }
-
     resetAdminUserPassword(user.id)
       .then(({ temporaryPassword: password }) => {
         setTemporaryPassword(password);
         setUsers(users.map((current) => (current.id === user.id ? { ...current, mustChangePassword: true } : current)));
       })
       .catch((error: unknown) => setActionError(error instanceof Error ? error.message : t(locale, 'passwordResetFailed')));
+  };
+
+  const removeUser = async (user: AppUser) => {
+    if (!window.confirm(locale === 'de' ? `${user.name} dauerhaft löschen?` : `Permanently delete ${user.name}?`)) return;
+    setActionError('');
+    try { await deleteAdminUser(user.id); setUsers(users.filter((current) => current.id !== user.id)); }
+    catch (error) { setActionError(error instanceof Error ? error.message : 'User deletion failed.'); }
   };
 
   return (
@@ -2622,7 +2659,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
         {users.map((user) => (
           <div key={user.id} className="table-row">
             <input value={user.name} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, name: event.target.value } : current)))} />
-            <input value={user.email} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, email: event.target.value } : current)))} />
+            <input value={user.email} readOnly title="Login email is managed through Supabase Authentication" />
             <select value={user.role} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, role: event.target.value as AppUser['role'] } : current)))}>
               <option value="owner">{t(locale, 'owner')}</option>
               <option value="admin">{t(locale, 'admin')}</option>
@@ -2634,7 +2671,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
             <button className={user.mustChangePassword ? 'status' : 'status active'} type="button" onClick={() => resetPassword(user)}>
               {user.mustChangePassword ? t(locale, 'pendingChange') : t(locale, 'resetPassword')}
             </button>
-            <button onClick={() => setUsers(users.filter((current) => current.id !== user.id))}>
+            <button onClick={() => void removeUser(user)}>
               <Trash2 size={16} />
             </button>
           </div>

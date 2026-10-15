@@ -1,7 +1,7 @@
 export type Locale = 'en' | 'de';
 export type MenuLayout = 'grid' | 'list';
 export type UserRole = 'admin' | 'owner';
-export type OrderStatus = 'new' | 'preparing' | 'done';
+export type OrderStatus = 'new' | 'preparing' | 'done' | 'cancelled';
 
 export interface Category {
   id: string;
@@ -30,9 +30,9 @@ export interface CartLine {
 
 export interface Order {
   id: string;
+  orderNumber?: string;
+  source?: 'menu' | 'pos';
   customerName: string;
-  address?: string;
-  phone: string;
   notes: string;
   lines: CartLine[];
   total: number;

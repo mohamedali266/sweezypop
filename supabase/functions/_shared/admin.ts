@@ -54,5 +54,6 @@ export async function getRequesterProfile(request: Request) {
 export async function requireAdmin(request: Request) {
   const context = await getRequesterProfile(request);
   if (context.profile.role !== 'admin') throw new Error('Admin role required.');
+  if (context.profile.must_change_password) throw new Error('Change your temporary password first.');
   return context;
 }

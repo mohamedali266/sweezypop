@@ -110,7 +110,6 @@ export const initialOrders: Order[] = [
   {
     id: 'SP-1042',
     customerName: 'Mia Carter',
-    phone: '+49 151 000 2026',
     notes: 'No nuts, please.',
     lines: [{ item: menuItems[0], quantity: 2 }, { item: menuItems[5], quantity: 1 }],
     total: 21.5,
@@ -120,7 +119,6 @@ export const initialOrders: Order[] = [
   {
     id: 'SP-1041',
     customerName: 'Jonas Weber',
-    phone: '+49 152 441 901',
     notes: 'Table 6',
     lines: [{ item: menuItems[3], quantity: 1 }],
     total: 6.75,

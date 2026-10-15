@@ -40,7 +40,10 @@ Deno.serve(async (request) => {
     };
 
     const { data: savedProfile, error: profileError } = await client.from('profiles').insert(profileRow).select('*').single();
-    if (profileError) throw profileError;
+    if (profileError) {
+      await client.auth.admin.deleteUser(authData.user.id);
+      throw profileError;
+    }
 
     return jsonResponse({
       user: {

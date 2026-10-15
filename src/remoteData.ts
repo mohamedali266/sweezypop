@@ -57,11 +57,6 @@ function readOfferDescription(descriptionDe: string | null) {
   }
 }
 
-function writeOfferDescription(item: MenuItem) {
-  if (item.categoryId !== 'offers' || !item.includedItemIds?.length) return item.description.de;
-  return `${item.description.de || item.description.en}\n${offerMetaPrefix}${JSON.stringify({ includedItemIds: item.includedItemIds })}`;
-}
-
 function normalizeSocialLinks(value: unknown, fallback: SocialLink[]) {
   if (!Array.isArray(value)) return fallback;
   return value
@@ -145,7 +140,7 @@ async function saveOptionalRestaurantSettings(restaurantId: string, theme: Theme
     })
     .eq('id', restaurantId);
 
-  if (error && error.code !== 'PGRST204') {
+  if (error) {
     throw error;
   }
 }
@@ -195,12 +190,11 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       imageUrl: item.image_url || '',
       available: Boolean(item.available),
       sortOrder: item.sort_order || 0,
-      includedItemIds: offerDescription.includedItemIds,
+      includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
     };
   });
 
-  const itemMap = new Map(items.map((item) => [item.id, item]));
-  const privateState = await loadPrivateRemoteState(restaurantId, itemMap, fallback);
+  const privateState = await loadPrivateRemoteState(restaurantId);
 
   return {
     categories,
@@ -220,32 +214,36 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
   };
 }
 
-async function loadPrivateRemoteState(restaurantId: string, itemMap: Map<string, MenuItem>, fallback: RemoteState) {
-  if (!supabase) return { orders: fallback.orders, users: fallback.users };
+async function loadPrivateRemoteState(restaurantId: string) {
+  if (!supabase) return { orders: [], users: [] };
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) return { orders: [], users: [] };
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('role, active, must_change_password, restaurant_id')
+    .eq('auth_user_id', session.session.user.id).maybeSingle();
+  if (profileError) throw profileError;
+  if (!profile?.active || profile.must_change_password || profile.restaurant_id !== restaurantId) return { orders: [], users: [] };
 
   const [ordersResult, usersResult] = await Promise.all([
-    supabase.from('orders').select('*, order_lines(*)').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }),
-    supabase.from('profiles').select('*').eq('restaurant_id', restaurantId).order('created_at'),
+    supabase.from('orders').select('id,order_number,source,customer_name,notes,total,status,created_at,order_lines(*)').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }).limit(500),
+    profile.role === 'admin' ? supabase.from('profiles').select('*').eq('restaurant_id', restaurantId).order('created_at') : Promise.resolve({ data: [], error: null }),
   ]);
-
-  const orders: Order[] = ordersResult.error
-    ? fallback.orders
-    : (ordersResult.data || []).map((order) => ({
+  if (ordersResult.error) throw ordersResult.error;
+  if (usersResult.error) throw usersResult.error;
+  const orders: Order[] = (ordersResult.data || []).map((order) => ({
         id: order.id,
+        orderNumber: String(order.order_number ?? order.id),
+        source: order.source,
         customerName: order.customer_name,
-        address: order.address || '',
-        phone: order.phone || '',
         notes: order.notes || '',
         total: Number(order.total || 0),
         status: order.status,
-        createdAt: order.created_at ? new Date(order.created_at).toLocaleString() : '',
-        lines: (order.order_lines || []).map((line: { menu_item_id: string; quantity: number; unit_price: number }) => ({
+        createdAt: order.created_at || '',
+        lines: (order.order_lines || []).map((line: { menu_item_id: string; quantity: number; unit_price: number; name_en?: string; name_de?: string }) => ({
           item:
-            itemMap.get(line.menu_item_id) ||
             ({
               id: line.menu_item_id,
               categoryId: 'deleted',
-              name: { en: 'Deleted item', de: 'Geloschter Artikel' },
+              name: { en: line.name_en || 'Historical item', de: line.name_de || 'Archivierter Artikel' },
               description: { en: '', de: '' },
               price: Number(line.unit_price || 0),
               imageStyle: 'pink',
@@ -256,9 +254,7 @@ async function loadPrivateRemoteState(restaurantId: string, itemMap: Map<string,
         })),
       }));
 
-  const users: AppUser[] = usersResult.error
-    ? fallback.users
-    : (usersResult.data || []).map((user) => ({
+  const users: AppUser[] = (usersResult.data || []).map((user) => ({
         id: user.id,
         authUserId: user.auth_user_id || undefined,
         name: user.name,
@@ -272,165 +268,82 @@ async function loadPrivateRemoteState(restaurantId: string, itemMap: Map<string,
   return { orders, users };
 }
 
-export async function saveRemoteState(state: RemoteState) {
-  if (!isSupabaseConfigured || !supabase) return;
-  const restaurant = await getRestaurant();
-  const restaurantId = restaurant.id;
-
-  const { error: settingsError } = await supabase.from('restaurants').update(restaurantSettingsPayload(state.theme)).eq('id', restaurantId);
-  if (settingsError) throw settingsError;
-  await saveOptionalRestaurantSettings(restaurantId, state.theme, state.layout);
-
-  await syncCategories(restaurantId, state.categories);
-  await syncMenuItems(restaurantId, state.items);
-  await deleteMissing('categories', restaurantId, state.categories.map((category) => category.id));
-  await syncHours(restaurantId, state.hours);
-  await syncOrders(restaurantId, state.orders);
-  await syncUsers(restaurantId, state.users, state.theme.siteName);
+type Row = Record<string, unknown> & { id: string };
+function catalogRows(state: RemoteState, restaurantId: string): Record<string, Row[]> {
+  return {
+    categories: state.categories.map(c => ({ id:c.id, restaurant_id:restaurantId, name_en:c.name.en, name_de:c.name.de, sort_order:c.sortOrder })),
+    menu_items: state.items.map(i => ({ id:i.id, restaurant_id:restaurantId, category_id:i.categoryId, name_en:i.name.en, name_de:i.name.de,
+      description_en:i.description.en, description_de:i.description.de, price:i.price, badge_en:i.badge?.en || null, badge_de:i.badge?.de || null,
+      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [] })),
+    opening_hours: state.hours.map((h,index) => ({ id:appId('hour',h.day), restaurant_id:restaurantId, day:h.day, open_time:h.open, close_time:h.close, enabled:h.enabled, sort_order:index+1 })),
+  };
 }
 
-export async function createRemoteOrder(order: Order) {
-  if (!isSupabaseConfigured || !supabase) return;
+export async function saveRemoteState(state: RemoteState, previous: RemoteState) {
+  if (!supabase) throw new Error('Supabase is not configured.');
   const restaurant = await getRestaurant();
-  const restaurantId = restaurant.id;
-
-  const { error: orderError } = await supabase.from('orders').insert({
-    id: order.id,
-    restaurant_id: restaurantId,
-    customer_name: order.customerName,
-    address: order.address || null,
-    phone: order.phone,
-    notes: order.notes,
-    status: order.status,
-    total: order.total,
-  });
-  if (orderError) throw orderError;
-
-  const lines = order.lines.map((line) => ({
-    id: appId(`${order.id}-line`, line.item.id),
-    order_id: order.id,
-    menu_item_id: line.item.id,
-    quantity: line.quantity,
-    unit_price: line.item.price,
-  }));
-
-  if (lines.length) {
-    const { error: linesError } = await supabase.from('order_lines').insert(lines);
-    if (linesError) throw linesError;
+  const next = catalogRows(state, restaurant.id);
+  const before = catalogRows(previous, restaurant.id);
+  const changes: { table: string; id: string; before: Row | null; after: Row | null }[] = [];
+  // Only changed entities are sent; absent rows elsewhere in the database are never deleted.
+  for (const table of ['categories','menu_items','opening_hours']) {
+    const previousRows = new Map(before[table].map(row => [row.id, row]));
+    for (const row of next[table]) {
+      const old = previousRows.get(row.id) || null;
+      if (JSON.stringify(old) !== JSON.stringify(row)) changes.push({ table, id:row.id, before:old, after:row });
+      previousRows.delete(row.id);
+    }
+    for (const row of previousRows.values()) changes.push({ table,id:row.id,before:row,after:null });
   }
-}
-
-async function deleteMissing(table: string, restaurantId: string, ids: string[]) {
-  if (!supabase) return;
-  if (ids.length === 0) {
-    await supabase.from(table).delete().eq('restaurant_id', restaurantId);
-    return;
-  }
-
-  const { data, error } = await supabase.from(table).select('id').eq('restaurant_id', restaurantId);
+  if (!changes.length) return;
+  const { error } = await supabase.rpc('save_catalog_changes', { p_restaurant:restaurant.id, p_changes:changes });
   if (error) throw error;
-
-  const keepIds = new Set(ids);
-  const deleteIds = (data || []).map((row) => String(row.id)).filter((id) => !keepIds.has(id));
-  if (deleteIds.length) {
-    const { error: deleteError } = await supabase.from(table).delete().in('id', deleteIds);
-    if (deleteError) throw deleteError;
-  }
 }
 
-async function syncCategories(restaurantId: string, categories: Category[]) {
-  if (!supabase) return;
-  const rows = categories.map((category) => ({
-    id: category.id,
-    restaurant_id: restaurantId,
-    name_en: category.name.en,
-    name_de: category.name.de,
-    sort_order: category.sortOrder,
-  }));
-  if (rows.length) await supabase.from('categories').upsert(rows);
+export interface OrderInput {
+  name: string;
+  notes: string;
+  lines: { item: MenuItem; quantity: number }[];
+  requestKey: string;
+  source?: 'menu' | 'pos';
 }
 
-async function syncMenuItems(restaurantId: string, items: MenuItem[]) {
-  if (!supabase) return;
-  const rows = items.map((item) => ({
-    id: item.id,
-    restaurant_id: restaurantId,
-    category_id: item.categoryId,
-    name_en: item.name.en,
-    name_de: item.name.de,
-    description_en: item.description.en,
-    description_de: writeOfferDescription(item),
-    price: item.price,
-    badge_en: item.badge?.en || null,
-    badge_de: item.badge?.de || null,
-    image_style: item.imageStyle,
-    image_url: item.imageUrl || null,
-    available: item.available,
-    sort_order: item.sortOrder,
-  }));
-  if (rows.length) await supabase.from('menu_items').upsert(rows);
-  await deleteMissing('menu_items', restaurantId, items.map((item) => item.id));
+export async function createRemoteOrder(input: OrderInput): Promise<Order> {
+  if (!supabase) throw new Error('Bestellungen sind derzeit nicht verfuegbar.');
+  const { data, error } = await supabase.rpc('place_order', {
+    p_slug:restaurantSlug, p_request_key:input.requestKey, p_name:input.name.trim(), p_notes:input.notes.trim(),
+    p_lines:input.lines.map(line => ({ id:line.item.id, quantity:line.quantity })), p_source:input.source || 'menu',
+  });
+  if (error) throw error;
+  if (!data?.id || !data?.created_at) throw new Error('Keine Bestaetigung vom Server. Bitte erneut versuchen.');
+  return { id:data.id, orderNumber:String(data.order_number), total:Number(data.total), createdAt:data.created_at,
+    source:input.source || 'menu', customerName:input.name.trim(), notes:input.notes.trim(),
+    status:'new', lines:(data.lines as { id:string; name_en:string; name_de:string; price:number; quantity:number }[]).map(line => ({
+      quantity:line.quantity, item:{ id:line.id, name:{en:line.name_en,de:line.name_de}, price:Number(line.price),
+        categoryId:'snapshot',description:{en:'',de:''},available:false,sortOrder:0,imageStyle:'' },
+    })) };
 }
 
-async function syncHours(restaurantId: string, hours: OpeningHour[]) {
-  if (!supabase) return;
-  const rows = hours.map((hour, index) => ({
-    id: appId('hour', hour.day),
-    restaurant_id: restaurantId,
-    day: hour.day,
-    open_time: hour.open,
-    close_time: hour.close,
-    enabled: hour.enabled,
-    sort_order: index + 1,
-  }));
-  if (rows.length) await supabase.from('opening_hours').upsert(rows);
+export async function updateRemoteOrderStatus(order: Order, status: Order['status']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('set_order_status', { p_id:order.id, p_expected:order.status, p_status:status });
+  if (error) throw error;
 }
 
-async function syncOrders(restaurantId: string, orders: Order[]) {
-  if (!supabase) return;
-  const rows = orders.map((order) => ({
-    id: order.id,
-    restaurant_id: restaurantId,
-    customer_name: order.customerName,
-    address: order.address || null,
-    phone: order.phone,
-    notes: order.notes,
-    status: order.status,
-    total: order.total,
-  }));
-  if (rows.length) await supabase.from('orders').upsert(rows);
-  await deleteMissing('orders', restaurantId, orders.map((order) => order.id));
-
-  const orderIds = orders.map((order) => order.id);
-  if (orderIds.length) {
-    await supabase.from('order_lines').delete().in('order_id', orderIds);
-    const lines = orders.flatMap((order) =>
-      order.lines.map((line) => ({
-        id: appId(`${order.id}-line`, line.item.id),
-        order_id: order.id,
-        menu_item_id: line.item.id,
-        quantity: line.quantity,
-        unit_price: line.item.price,
-      })),
-    );
-    if (lines.length) await supabase.from('order_lines').insert(lines);
-  }
-}
-
-async function syncUsers(restaurantId: string, users: AppUser[], restaurantName: string) {
-  if (!supabase) return;
-  const rows = users.map((user) => ({
-    id: user.id,
-    restaurant_id: restaurantId,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    restaurant_name: user.restaurant || restaurantName,
-    active: user.active,
-    must_change_password: Boolean(user.mustChangePassword),
-  }));
-  if (rows.length) await supabase.from('profiles').upsert(rows);
-  await deleteMissing('profiles', restaurantId, users.map((user) => user.id));
+export async function saveRemoteUsers(users: AppUser[], previous: AppUser[]) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const fields = (u: AppUser) => ({ name:u.name,role:u.role,active:u.active,restaurant_name:u.restaurant });
+  const changes = previous.flatMap(old => {
+    const next = users.find(u => u.id===old.id);
+    if (!next) return [];
+    const before = fields(old);
+    const after = fields(next);
+    return JSON.stringify(before)===JSON.stringify(after) ? [] : [{ id:old.id,before,after }];
+  });
+  if (!changes.length) return;
+  const restaurant = await getRestaurant();
+  const { error } = await supabase.rpc('save_profile_changes', { p_restaurant:restaurant.id,p_changes:changes });
+  if (error) throw error;
 }
 
 export interface AdminUserPayload {
@@ -457,8 +370,15 @@ export async function resetAdminUserPassword(profileId: string) {
   return data as { profileId: string; temporaryPassword: string };
 }
 
-export async function completeTemporaryPasswordChange() {
+export async function deleteAdminUser(profileId: string) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-  const { error } = await supabase.functions.invoke('complete-password-change', { body: {} });
+  const { data, error } = await supabase.functions.invoke('admin-delete-user', { body: { profileId } });
+  if (error) throw error;
+  if (!data?.ok) throw new Error('User deletion was not confirmed.');
+}
+
+export async function completeTemporaryPasswordChange(password: string) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.functions.invoke('complete-password-change', { body: { password } });
   if (error) throw error;
 }
