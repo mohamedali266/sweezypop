@@ -75,8 +75,6 @@ const socialPlatformOptions = [
   { value: 'custom', label: 'Custom', iconSlug: '' },
 ] as const;
 const socialPlatforms = new Map(socialPlatformOptions.map((platform) => [platform.value, platform]));
-const devPosPreview = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === 'pos';
-
 function itemDescription(item: MenuItem, locale: Locale) {
   return item.description[locale].split('__offer_meta__:')[0].trim();
 }
@@ -226,7 +224,7 @@ async function readMenuRowsFromWorkbook(file: File) {
 }
 
 function AppContent() {
-  const [view, setView] = useState<View>(devPosPreview ? 'admin' : 'menu');
+  const [view, setView] = useState<View>('menu');
   const [showLoader, setShowLoader] = useState(true);
   const [locale, setLocale] = useState<Locale>(() => loadStored<unknown>('sweezypop.locale', 'de') === 'en' ? 'en' : 'de');
   useEffect(() => {
@@ -238,16 +236,16 @@ function AppContent() {
     }
   }, [locale]);
   const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
-  const [items, setItems] = useState<MenuItem[]>(devPosPreview ? seedItems : []);
-  const [categories, setCategories] = useState<Category[]>(devPosPreview ? seedCategories : []);
-  const [orders, setOrders] = useState<Order[]>(devPosPreview ? initialOrders : []);
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
   const [hours, setHours] = useState<OpeningHour[]>(() => safeArray(loadStored(storageKeys.hours, seedHours), seedHours));
   const [activeCategory, setActiveCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(devPosPreview ? 'admin' : null);
+  const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(null);
   const [submittedOrderId, setSubmittedOrderId] = useState('');
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
@@ -500,7 +498,7 @@ function AppContent() {
   }, [activeCategory, categories]);
 
   useEffect(() => {
-    if (devPosPreview || !isSupabaseConfigured || !remoteReady || !authRole || !baseline.current || saveInFlight.current) return;
+    if (!isSupabaseConfigured || !remoteReady || !authRole || !baseline.current || saveInFlight.current) return;
     const previous = baseline.current;
     if (JSON.stringify([categories,items,hours,users]) === JSON.stringify([previous.categories,previous.items,previous.hours,previous.users])) return;
     setSaveMessage('Nicht gespeicherte Änderungen');
@@ -598,8 +596,6 @@ function AppContent() {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error || !data.user) return error?.message || t(locale, 'loginInvalid');
 
-      console.info('Sweezypop login user id:', data.user.id);
-
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -674,7 +670,7 @@ function AppContent() {
     >
       {showLoader && <LoaderScreen />}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
-      {authRole && showInstallBanner && !isStandalone && !devPosPreview && (
+      {authRole && showInstallBanner && !isStandalone && (
         <InstallAppBanner
           locale={locale}
           theme={theme}
@@ -687,7 +683,7 @@ function AppContent() {
       )}
       <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
       {(loadError || (authRole && saveMessage)) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
-      {!isSupabaseConfigured && !devPosPreview && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
+      {!isSupabaseConfigured && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
       {view === 'menu' ? (
         <MenuPage
           locale={locale}
@@ -879,8 +875,8 @@ function TopNav({
 }
 
 function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSettings; onLogin: (email: string, password: string) => Promise<string | null> }) {
-  const [email, setEmail] = useState('owner@sweezypop.test');
-  const [password, setPassword] = useState('demo1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const submit = (event: FormEvent) => {
@@ -905,11 +901,11 @@ function LoginPage({ locale, theme, onLogin }: { locale: Locale; theme: ThemeSet
           <p className="muted">{t(locale, 'loginCopy')}</p>
           <label>
             {t(locale, 'email')}
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="username" />
           </label>
           <label>
             {t(locale, 'password')}
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" />
           </label>
           <button className="primary-action full" type="submit">
             <LogIn size={18} />
@@ -1431,7 +1427,7 @@ function Dashboard(props: {
   const todaysOrders = todayOrders(props.orders);
   const revenue = todaysOrders.reduce((sum, order) => sum + order.total, 0);
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [activeSection, setActiveSection] = useState<DashboardSection>(devPosPreview ? 'pos' : 'overview');
+  const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
