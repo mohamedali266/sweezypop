@@ -861,8 +861,19 @@ function TopNav({
       </button>
       <div className="nav-spacer" />
       <div className="locale-switch" aria-label={t(locale, 'languageSwitch')}>
-        <button className="active" onClick={() => setLocale(locale === 'en' ? 'de' : 'en')} aria-label={t(locale, 'languageSwitch')}>
-          {locale.toUpperCase()}
+        <button
+          className={`language-toggle ${locale === 'en' ? 'is-en' : 'is-de'}`}
+          onClick={() => setLocale(locale === 'en' ? 'de' : 'en')}
+          aria-label={locale === 'de' ? 'Switch to English' : 'Zu Deutsch wechseln'}
+          title={locale === 'de' ? 'Switch to English' : 'Zu Deutsch wechseln'}
+        >
+          <span className="language-toggle-thumb" aria-hidden="true" />
+          <span className="language-flag language-flag-de" aria-hidden="true">
+            <img src="/flags/de.svg" alt="" />
+          </span>
+          <span className="language-flag language-flag-gb" aria-hidden="true">
+            <img src="/flags/gb.svg" alt="" />
+          </span>
         </button>
         {authRole ? (
           <button className="icon-only-nav" onClick={onLogout} aria-label={t(locale, 'signOut')} title={t(locale, 'signOut')}>
