@@ -30,7 +30,8 @@ create table if not exists profiles (
   restaurant_id text references restaurants(id) on delete cascade,
   name text not null,
   email text unique not null,
-  role text not null check (role in ('admin', 'owner')),
+  role text not null check (role in ('admin', 'owner', 'staff')),
+  station text not null default 'all',
   restaurant_name text,
   active boolean default true,
   must_change_password boolean default false,
@@ -63,6 +64,16 @@ create table if not exists menu_items (
   image_url text,
   available boolean default true,
   included_item_ids text[] not null default '{}',
+  prep_station text not null default 'kitchen',
+  prep_minutes integer not null default 0 check (prep_minutes between 0 and 240),
+  prep_ingredients_en text[] not null default '{}',
+  prep_ingredients_de text[] not null default '{}',
+  prep_tools_en text[] not null default '{}',
+  prep_tools_de text[] not null default '{}',
+  prep_steps_en text[] not null default '{}',
+  prep_steps_de text[] not null default '{}',
+  prep_warning_en text not null default '',
+  prep_warning_de text not null default '',
   sort_order integer default 0,
   created_at timestamptz default now()
 );
@@ -85,11 +96,16 @@ create table if not exists orders (
   address text,
   phone text not null,
   notes text default '',
-  status text not null default 'new' check (status in ('new', 'preparing', 'done', 'cancelled')),
+  status text not null default 'new' check (status in ('new', 'accepted', 'preparing', 'ready', 'done', 'cancelled')),
   total numeric(10, 2) not null check (total >= 0),
   request_key uuid,
   request_payload jsonb,
   source text not null default 'menu' check (source in ('menu', 'pos')),
+  accepted_at timestamptz,
+  preparing_at timestamptz,
+  ready_at timestamptz,
+  completed_at timestamptz,
+  assigned_staff_id text references profiles(id) on delete set null,
   created_at timestamptz default now()
 );
 
@@ -101,6 +117,22 @@ create table if not exists order_lines (
   unit_price numeric(10, 2) not null check (unit_price >= 0),
   name_en text,
   name_de text
+);
+
+create table if not exists staff_shifts (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id text not null references restaurants(id) on delete cascade,
+  staff_profile_id text not null references profiles(id) on delete cascade,
+  auth_user_id uuid not null,
+  status text not null default 'open' check (status in ('open','closed','force_closed')),
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  ended_by uuid,
+  end_reason text not null default '',
+  orders_handled integer not null default 0 check (orders_handled >= 0),
+  constraint staff_shift_end_consistency check (
+    (status = 'open' and ended_at is null) or (status <> 'open' and ended_at is not null)
+  )
 );
 
 create index if not exists idx_categories_restaurant on categories(restaurant_id, sort_order);

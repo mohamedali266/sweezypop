@@ -1558,7 +1558,7 @@ button {
 }
 
 .item-row {
-  grid-template-columns: auto 64px minmax(180px, 1fr) minmax(140px, 0.7fr) 110px auto;
+  grid-template-columns: auto 64px minmax(180px, 1fr) minmax(140px, 0.7fr) 110px auto auto;
   background: linear-gradient(135deg, #ffffff, #fbf8ff);
   border: 1px solid var(--border);
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
@@ -1818,6 +1818,21 @@ button {
 
 .form-grid textarea {
   padding-top: 12px;
+}
+
+.form-grid label small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.preparation-form-card {
+  width: min(980px, 100%);
+}
+
+.preparation-form-card textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .item-form-split {
@@ -2220,7 +2235,7 @@ button {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 1fr 1.35fr 110px 1fr 100px 130px auto;
+  grid-template-columns: 1fr 1.35fr 100px 1fr 110px 100px 130px auto;
   gap: 8px;
   align-items: center;
 }

@@ -4,10 +4,13 @@ import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { PointOfSale, OrderReceipt } from './PointOfSale';
 import { OrdersWorkspace } from './OrdersWorkspace';
+import { StaffManagement } from './StaffManagement';
+import { StaffWorkspace } from './StaffWorkspace';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
   CalendarClock,
+  ChefHat,
   Check,
   ChevronRight,
   CircleUserRound,
@@ -50,10 +53,10 @@ import {
   type RemoteState,
 } from './remoteData';
 import { isSupabaseConfigured, supabase } from './supabase';
-import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings } from './types';
+import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
 
-type View = 'menu' | 'login' | 'owner' | 'admin' | 'password-change';
-type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'users';
+type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'password-change';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -245,7 +248,8 @@ function AppContent() {
   const [activeCategory, setActiveCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [authRole, setAuthRole] = useState<'owner' | 'admin' | null>(null);
+  const [authRole, setAuthRole] = useState<UserRole | null>(null);
+  const [authProfile, setAuthProfile] = useState<{ name:string; restaurantId:string } | null>(null);
   const [submittedOrderId, setSubmittedOrderId] = useState('');
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
@@ -293,6 +297,7 @@ function AppContent() {
     if (remoteState) applyRemoteState(remoteState);
 
     setAuthRole(profile.role);
+    setAuthProfile({ name:profile.name, restaurantId:profile.restaurant_id });
     setView(profile.must_change_password ? 'password-change' : profile.role);
   };
 
@@ -498,7 +503,7 @@ function AppContent() {
   }, [activeCategory, categories]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !remoteReady || !authRole || !baseline.current || saveInFlight.current) return;
+    if (!isSupabaseConfigured || !remoteReady || !['admin','owner'].includes(authRole || '') || !baseline.current || saveInFlight.current) return;
     const previous = baseline.current;
     if (JSON.stringify([categories,items,hours,users]) === JSON.stringify([previous.categories,previous.items,previous.hours,previous.users])) return;
     setSaveMessage('Nicht gespeicherte Änderungen');
@@ -523,7 +528,7 @@ function AppContent() {
   }, [authRole, categories, hours, items, users, remoteReady, syncVersion]);
 
   const persistSiteSettings = async (nextTheme: ThemeSettings, nextLayout: MenuLayout) => {
-    if (isSupabaseConfigured && authRole) {
+    if (isSupabaseConfigured && (authRole === 'admin' || authRole === 'owner')) {
       await saveRemoteSiteSettings(nextTheme, nextLayout);
     }
     setTheme(nextTheme);
@@ -531,7 +536,7 @@ function AppContent() {
   };
 
   useEffect(() => {
-    if (!remoteReady || !isSupabaseConfigured) return;
+    if (!remoteReady || !isSupabaseConfigured || authRole === 'staff') return;
     let stopped = false;
     let busy = false;
     const refresh = async () => {
@@ -610,6 +615,7 @@ function AppContent() {
         applyRemoteState(remoteState);
       }
       setAuthRole(profile.role);
+      setAuthProfile({ name:profile.name, restaurantId:profile.restaurant_id });
       setView(profile.must_change_password ? 'password-change' : profile.role);
       saveStored(storageKeys.dashboardView, profile.role);
       window.history.replaceState(null, '', window.location.pathname);
@@ -622,6 +628,7 @@ function AppContent() {
   const handleLogout = () => {
     if (supabase) void supabase.auth.signOut();
     setAuthRole(null);
+    setAuthProfile(null);
     setOrders([]);
     setUsers([]);
     setView('menu');
@@ -681,10 +688,20 @@ function AppContent() {
           onDismiss={dismissInstallBanner}
         />
       )}
-      <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />
+      {view !== 'staff' && <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />}
       {(loadError || (authRole && saveMessage)) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
       {!isSupabaseConfigured && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
-      {view === 'menu' ? (
+      {view === 'staff' && authRole === 'staff' && authProfile ? (
+        <StaffWorkspace
+          locale={locale}
+          siteName={theme.siteName}
+          logoUrl={theme.logoUrl}
+          staffName={authProfile.name}
+          restaurantId={authProfile.restaurantId}
+          onToggleLocale={() => setLocale(locale === 'de' ? 'en' : 'de')}
+          onLogout={handleLogout}
+        />
+      ) : view === 'menu' ? (
         <MenuPage
           locale={locale}
           layout={layout}
@@ -709,7 +726,7 @@ function AppContent() {
         <PasswordChangePage locale={locale} theme={theme} onComplete={() => setView(authRole)} onLogout={handleLogout} />
       ) : (
         <Dashboard
-          mode={view}
+          mode={view === 'admin' ? 'admin' : 'owner'}
           locale={locale}
           layout={layout}
           setLayout={setLayout}
@@ -850,7 +867,7 @@ function TopNav({
   locale: Locale;
   setLocale: (locale: Locale) => void;
   theme: ThemeSettings;
-  authRole: 'owner' | 'admin' | null;
+  authRole: UserRole | null;
   onLogout: () => void;
 }) {
   return (
@@ -1464,6 +1481,7 @@ function Dashboard(props: {
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
     { id: 'hours', label: t(props.locale, 'hours'), icon: CalendarClock },
     { id: 'orders', label: t(props.locale, 'orders'), icon: BadgeDollarSign },
+    { id: 'staff', label: props.locale === 'de' ? 'Team & Schichten' : 'Staff & shifts', icon: ChefHat },
   ];
 
   if (props.mode === 'admin') {
@@ -1768,6 +1786,12 @@ function Dashboard(props: {
             </section>
           )}
 
+          {activeSection === 'staff' && (
+            <section className="dashboard-card focus-card" id="staff-management">
+              <StaffManagement locale={props.locale} isAdmin={props.mode === 'admin'} />
+            </section>
+          )}
+
           {activeSection === 'users' && props.mode === 'admin' && <UsersManager locale={props.locale} users={props.users} setUsers={props.setUsers} />}
         </div>
       </section>
@@ -1823,6 +1847,7 @@ function ItemsManager({
   importItemsFromExcel: (file: File) => Promise<void>;
 }) {
   const [formOpen, setFormOpen] = useState(false);
+  const [preparationItem, setPreparationItem] = useState<MenuItem | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [form, setForm] = useState({
     nameEn: '',
@@ -1989,6 +2014,9 @@ function ItemsManager({
               ))}
             </select>
             <input type="number" value={item.price} onChange={(event) => updateItem(item.id, { price: Number(event.target.value) })} />
+            <button title={locale === 'de' ? 'Zubereitung bearbeiten' : 'Edit preparation'} onClick={() => setPreparationItem(item)}>
+              <ChefHat size={16} />
+            </button>
             <button title={t(locale, 'delete')} onClick={() => setItems(items.filter((current) => current.id !== item.id))}>
               <Trash2 size={16} />
             </button>
@@ -2112,8 +2140,61 @@ function ItemsManager({
           </form>
         </div>
       )}
+      {preparationItem && (
+        <PreparationEditor
+          locale={locale}
+          item={preparationItem}
+          onClose={() => setPreparationItem(null)}
+          onSave={(preparation) => {
+            updateItem(preparationItem.id, { preparation });
+            setPreparationItem(null);
+          }}
+        />
+      )}
     </section>
   );
+}
+
+function PreparationEditor({ locale, item, onClose, onSave }: { locale:Locale; item:MenuItem; onClose:()=>void; onSave:(preparation:NonNullable<MenuItem['preparation']>)=>void }) {
+  const prep=item.preparation;
+  const [station,setStation]=useState(prep?.station || 'kitchen');
+  const [minutes,setMinutes]=useState(String(prep?.estimatedMinutes || 0));
+  const [ingredientsEn,setIngredientsEn]=useState((prep?.ingredients.en || []).join('\n'));
+  const [ingredientsDe,setIngredientsDe]=useState((prep?.ingredients.de || []).join('\n'));
+  const [toolsEn,setToolsEn]=useState((prep?.tools.en || []).join('\n'));
+  const [toolsDe,setToolsDe]=useState((prep?.tools.de || []).join('\n'));
+  const [stepsEn,setStepsEn]=useState((prep?.steps.en || []).join('\n'));
+  const [stepsDe,setStepsDe]=useState((prep?.steps.de || []).join('\n'));
+  const [warningEn,setWarningEn]=useState(prep?.warning.en || '');
+  const [warningDe,setWarningDe]=useState(prep?.warning.de || '');
+  const lines=(value:string)=>value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const label=locale==='de' ? {
+    eyebrow:'Arbeitsanweisung',title:'Zubereitung bearbeiten',station:'Station',minutes:'Richtzeit (Minuten)',ingredientsEn:'Zutaten (Englisch)',ingredientsDe:'Zutaten (Deutsch)',toolsEn:'Werkzeuge (Englisch)',toolsDe:'Werkzeuge (Deutsch)',stepsEn:'Schritte (Englisch)',stepsDe:'Schritte (Deutsch)',warningEn:'Hinweis (Englisch)',warningDe:'Hinweis (Deutsch)',hint:'Ein Eintrag pro Zeile',cancel:'Abbrechen',save:'Anweisung speichern',
+  } : {
+    eyebrow:'Work instruction',title:'Edit preparation',station:'Station',minutes:'Target time (minutes)',ingredientsEn:'Ingredients (English)',ingredientsDe:'Ingredients (German)',toolsEn:'Tools (English)',toolsDe:'Tools (German)',stepsEn:'Steps (English)',stepsDe:'Steps (German)',warningEn:'Warning (English)',warningDe:'Warning (German)',hint:'One entry per line',cancel:'Cancel',save:'Save instructions',
+  };
+  const submit=(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    onSave({station:station.trim()||'kitchen',estimatedMinutes:Math.min(240,Math.max(0,Number(minutes)||0)),ingredients:{en:lines(ingredientsEn),de:lines(ingredientsDe)},tools:{en:lines(toolsEn),de:lines(toolsDe)},steps:{en:lines(stepsEn),de:lines(stepsDe)},warning:{en:warningEn.trim(),de:warningDe.trim()}});
+  };
+  return <div className="modal-overlay" role="presentation" onClick={onClose}>
+    <form className="item-form-card preparation-form-card animated-panel" role="dialog" aria-modal="true" aria-label={label.title} onClick={event=>event.stopPropagation()} onSubmit={submit}>
+      <div className="section-head"><div><span className="eyebrow dark">{label.eyebrow}</span><h2>{item.name[locale]}</h2></div><button type="button" className="ghost-icon dark" onClick={onClose} aria-label={t(locale,'close')}>x</button></div>
+      <div className="form-grid">
+        <label>{label.station}<input value={station} maxLength={60} onChange={event=>setStation(event.target.value)}/></label>
+        <label>{label.minutes}<input type="number" min="0" max="240" value={minutes} onChange={event=>setMinutes(event.target.value)}/></label>
+        <label>{label.ingredientsEn}<small>{label.hint}</small><textarea value={ingredientsEn} onChange={event=>setIngredientsEn(event.target.value)}/></label>
+        <label>{label.ingredientsDe}<small>{label.hint}</small><textarea value={ingredientsDe} onChange={event=>setIngredientsDe(event.target.value)}/></label>
+        <label>{label.toolsEn}<small>{label.hint}</small><textarea value={toolsEn} onChange={event=>setToolsEn(event.target.value)}/></label>
+        <label>{label.toolsDe}<small>{label.hint}</small><textarea value={toolsDe} onChange={event=>setToolsDe(event.target.value)}/></label>
+        <label>{label.stepsEn}<small>{label.hint}</small><textarea rows={6} value={stepsEn} onChange={event=>setStepsEn(event.target.value)}/></label>
+        <label>{label.stepsDe}<small>{label.hint}</small><textarea rows={6} value={stepsDe} onChange={event=>setStepsDe(event.target.value)}/></label>
+        <label>{label.warningEn}<textarea value={warningEn} onChange={event=>setWarningEn(event.target.value)}/></label>
+        <label>{label.warningDe}<textarea value={warningDe} onChange={event=>setWarningDe(event.target.value)}/></label>
+      </div>
+      <div className="modal-actions"><button type="button" className="small-action neutral" onClick={onClose}>{label.cancel}</button><button type="submit" className="small-action"><Save size={16}/>{label.save}</button></div>
+    </form>
+  </div>;
 }
 
 function OffersManager({
@@ -2619,6 +2700,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
     role: 'owner',
     restaurant: 'Sweezypop',
     active: true,
+    station: 'all',
   });
 
   const addUser = (event: FormEvent<HTMLFormElement>) => {
@@ -2631,7 +2713,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
         setUsers([...users, user]);
         setTemporaryPassword(password);
         setFormOpen(false);
-        setForm({ name: '', email: '', role: 'owner', restaurant: form.restaurant, active: true });
+        setForm({ name: '', email: '', role: 'owner', restaurant: form.restaurant, active: true, station:'all' });
       })
       .catch((error: unknown) => setActionError(error instanceof Error ? error.message : t(locale, 'userCreateFailed')))
       .finally(() => setCreating(false));
@@ -2662,7 +2744,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
           <p className="muted">{t(locale, 'usersSecurityCopy')}</p>
         </div>
         <button className="small-action" onClick={() => setFormOpen(true)}>
-          <CircleUserRound size={16} /> {t(locale, 'addOwner')}
+          <CircleUserRound size={16} /> {t(locale, 'createUser')}
         </button>
       </div>
       {actionError && <p className="form-error">{actionError}</p>}
@@ -2672,6 +2754,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
           <span>{t(locale, 'email')}</span>
           <span>{t(locale, 'role')}</span>
           <span>{t(locale, 'restaurant')}</span>
+          <span>{locale === 'de' ? 'Station' : 'Station'}</span>
           <span>{t(locale, 'status')}</span>
           <span>{t(locale, 'password')}</span>
         </div>
@@ -2682,8 +2765,10 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
             <select value={user.role} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, role: event.target.value as AppUser['role'] } : current)))}>
               <option value="owner">{t(locale, 'owner')}</option>
               <option value="admin">{t(locale, 'admin')}</option>
+              <option value="staff">Staff</option>
             </select>
             <input value={user.restaurant} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, restaurant: event.target.value } : current)))} />
+            <input value={user.station || 'all'} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, station: event.target.value } : current)))} />
             <button className={user.active ? 'status active' : 'status'} onClick={() => setUsers(users.map((current) => (current.id === user.id ? { ...current, active: !current.active } : current)))}>
               {user.active ? t(locale, 'active') : t(locale, 'inactive')}
             </button>
@@ -2699,7 +2784,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
 
       {formOpen && (
         <div className="modal-overlay" role="presentation" onClick={() => setFormOpen(false)}>
-          <form className="item-form-card user-form-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'addOwner')} onClick={(event) => event.stopPropagation()} onSubmit={addUser}>
+          <form className="item-form-card user-form-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'createUser')} onClick={(event) => event.stopPropagation()} onSubmit={addUser}>
             <div className="section-head">
               <div>
                 <span className="eyebrow dark">{t(locale, 'users')}</span>
@@ -2723,11 +2808,16 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
                 <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as AppUser['role'] })}>
                   <option value="owner">{t(locale, 'owner')}</option>
                   <option value="admin">{t(locale, 'admin')}</option>
+                  <option value="staff">Staff</option>
                 </select>
               </label>
               <label>
                 {t(locale, 'restaurant')}
                 <input value={form.restaurant} onChange={(event) => setForm({ ...form, restaurant: event.target.value })} />
+              </label>
+              <label>
+                {locale === 'de' ? 'Station' : 'Station'}
+                <input value={form.station || ''} onChange={(event) => setForm({ ...form, station: event.target.value })} placeholder="kitchen" />
               </label>
               <label className="toggle-line wide">
                 <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />

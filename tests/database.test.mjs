@@ -13,22 +13,24 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
 const owner='00000000-0000-4000-8000-000000000002';
-await db.exec(`insert into auth.users values ('${admin}'),('${owner}');
+const staff='00000000-0000-4000-8000-000000000003';
+await db.exec(`insert into auth.users values ('${admin}'),('${owner}'),('${staff}');
 insert into profiles(id,auth_user_id,restaurant_id,name,email,role) values
-('admin','${admin}','sweezypop','Admin','admin@test.test','admin'),('owner','${owner}','sweezypop','Owner','owner@test.test','owner');
+('admin','${admin}','sweezypop','Admin','admin@test.test','admin'),('owner','${owner}','sweezypop','Owner','owner@test.test','owner'),
+('staff','${staff}','sweezypop','Kitchen','staff@test.test','staff');
 insert into categories(id,restaurant_id,name_en,name_de) values ('food','sweezypop','Food','Speisen'),('offers','sweezypop','Offers','Angebote');
 insert into menu_items(id,restaurant_id,category_id,name_en,name_de,price) values ('cake','sweezypop','food','Cake','Kuchen',6.50),('drink','sweezypop','food','Drink','Getränk',3);
 insert into menu_items(id,restaurant_id,category_id,name_en,name_de,price,included_item_ids) values ('combo','sweezypop','offers','Combo','Kombi',8,array['cake','drink']);`);
 after(() => db.close());
 let saved;
 const key = '00000000-0000-4000-8000-000000000010';
-const place = async (requestKey=key,lines=[{id:'cake',quantity:2}],source='menu') =>
-  (await db.query('select place_order($1,$2,$3,$4,$5::jsonb,$6) as result',['sweezypop',requestKey,'Anna','Ohne Sahne',JSON.stringify(lines),source])).rows[0].result;
+const place = async (requestKey=key,lines=[{id:'cake',quantity:2}],source='menu',clientToken='test-client-main-0001') =>
+  (await db.query('select place_order($1,$2,$3,$4,$5::jsonb,$6,$7) as result',['sweezypop',requestKey,'Anna','Ohne Sahne',JSON.stringify(lines),source,clientToken])).rows[0].result;
 test('atomic order, server prices, snapshots and unique number', async () => {
   saved=await place(key,[{id:'cake',quantity:2,price:0.01}]);
   assert.equal(saved.total,13);
@@ -72,6 +74,41 @@ test('authorized POS and cancellation, audit log, terminal state protected',asyn
   assert.equal((await db.query('select status from orders where id=$1',[pos.id])).rows[0].status,'cancelled');
   assert.equal((await db.query('select count(*)::int n from order_events where order_id=$1',[pos.id])).rows[0].n,1);
   await assert.rejects(db.query("select set_order_status($1,'cancelled','new')",[pos.id]),/Invalid status/);
+});
+test('menu rate limits are atomic per client while idempotent retries remain available',async () => {
+  await db.query("select set_config('test.uid','',false)");
+  const token='rate-limit-client-0001';
+  for(let index=0;index<6;index+=1) await place(randomUUID(),[{id:'drink',quantity:1}],'menu',token);
+  await assert.rejects(place(randomUUID(),[{id:'drink',quantity:1}],'menu',token),/Rate limit exceeded/);
+  const retryKey=randomUUID();
+  const otherToken='rate-limit-client-0002';
+  const first=await place(retryKey,[{id:'drink',quantity:1}],'menu',otherToken);
+  assert.equal((await place(retryKey,[{id:'drink',quantity:1}],'menu',otherToken)).id,first.id);
+});
+test('staff need an open shift and can only advance orders through the kitchen workflow',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[staff]);
+  await assert.rejects(db.query('select get_staff_order_board()'),/Active shift required/);
+  const shift=(await db.query('select start_staff_shift() result')).rows[0].result;
+  assert.equal(shift.status,'open');
+  assert.equal((await db.query('select start_staff_shift() result')).rows[0].result.id,shift.id);
+  const order=await place(randomUUID(),[{id:'drink',quantity:1}],'menu','staff-flow-client-0001');
+  const board=(await db.query('select get_staff_order_board() result')).rows[0].result;
+  assert.ok(board.some(row=>row.id===order.id));
+  for(const [from,to] of [['new','accepted'],['accepted','preparing'],['preparing','ready'],['ready','done']]) {
+    await db.query('select set_staff_order_status($1,$2,$3)',[order.id,from,to]);
+  }
+  assert.equal((await db.query('select status from orders where id=$1',[order.id])).rows[0].status,'done');
+  const ended=(await db.query('select end_staff_shift() result')).rows[0].result;
+  assert.equal(ended.orders_handled,1);
+  await assert.rejects(db.query('select set_staff_order_status($1,$2,$3)',[saved.id,'new','accepted']),/Active staff shift required/);
+});
+test('owners can edit existing staff but cannot change roles or create profiles',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[owner]);
+  await db.query("select update_staff_member('staff','Prep','true','drinks')");
+  const changed=(await db.query("select name,station,role from profiles where id='staff'")).rows[0];
+  assert.deepEqual(changed,{name:'Prep',station:'drinks',role:'staff'});
+  await assert.rejects(db.query("select save_profile_changes('sweezypop','[]')"),/Access denied/);
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
 });
 test('catalog writes are targeted, optimistic and atomic',async () => {
   const before={id:'cake',restaurant_id:'sweezypop',price:6.5};

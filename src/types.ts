@@ -1,7 +1,16 @@
 export type Locale = 'en' | 'de';
 export type MenuLayout = 'grid' | 'list';
-export type UserRole = 'admin' | 'owner';
-export type OrderStatus = 'new' | 'preparing' | 'done' | 'cancelled';
+export type UserRole = 'admin' | 'owner' | 'staff';
+export type OrderStatus = 'new' | 'accepted' | 'preparing' | 'ready' | 'done' | 'cancelled';
+
+export interface ItemPreparation {
+  station: string;
+  estimatedMinutes: number;
+  ingredients: Record<Locale, string[]>;
+  tools: Record<Locale, string[]>;
+  steps: Record<Locale, string[]>;
+  warning: Record<Locale, string>;
+}
 
 export interface Category {
   id: string;
@@ -21,6 +30,7 @@ export interface MenuItem {
   available: boolean;
   sortOrder: number;
   includedItemIds?: string[];
+  preparation?: ItemPreparation;
 }
 
 export interface CartLine {
@@ -40,6 +50,33 @@ export interface Order {
   createdAt: string;
 }
 
+export interface StaffShift {
+  id: string;
+  status: 'open' | 'closed' | 'force_closed';
+  startedAt: string;
+  endedAt?: string;
+  ordersHandled: number;
+  staffProfileId: string;
+}
+
+export interface StaffBoardOrder extends Order {
+  acceptedAt?: string;
+  preparingAt?: string;
+  readyAt?: string;
+}
+
+export interface StaffDirectoryEntry {
+  id: string;
+  authUserId?: string;
+  name: string;
+  email: string;
+  active: boolean;
+  station: string;
+  restaurant: string;
+  currentShift?: StaffShift;
+  recentShifts: StaffShift[];
+}
+
 export interface SocialLink {
   id: string;
   platform?: string;
@@ -57,6 +94,7 @@ export interface AppUser {
   restaurant: string;
   active: boolean;
   mustChangePassword?: boolean;
+  station?: string;
 }
 
 export interface ThemeSettings {

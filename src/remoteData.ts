@@ -1,4 +1,4 @@
-import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings } from './types';
+import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -13,8 +13,9 @@ export interface RemoteState {
 
 const restaurantSlug = import.meta.env.VITE_RESTAURANT_SLUG || 'sweezypop';
 
-type DbOrderLine = { menu_item_id?: string | null; id?: string | null; quantity: number; unit_price?: number; price?: number; name_en?: string; name_de?: string };
-type DbOrder = { id: string; order_number?: string | number; source?: 'menu' | 'pos'; customer_name: string; notes?: string; total: number; status: Order['status']; created_at: string; order_lines?: DbOrderLine[]; lines?: DbOrderLine[] };
+type DbPreparation = { station?: string; estimated_minutes?: number; ingredients_en?: string[]; ingredients_de?: string[]; tools_en?: string[]; tools_de?: string[]; steps_en?: string[]; steps_de?: string[]; warning_en?: string; warning_de?: string };
+type DbOrderLine = { menu_item_id?: string | null; id?: string | null; quantity: number; unit_price?: number; price?: number; name_en?: string; name_de?: string; preparation?: DbPreparation | null };
+type DbOrder = { id: string; order_number?: string | number; source?: 'menu' | 'pos'; customer_name: string; notes?: string; total: number; status: Order['status']; created_at: string; accepted_at?: string; preparing_at?: string; ready_at?: string; order_lines?: DbOrderLine[]; lines?: DbOrderLine[] };
 
 function orderFromRow(order: DbOrder): Order {
   return {
@@ -36,6 +37,14 @@ function orderFromRow(order: DbOrder): Order {
         imageStyle: 'pink',
         available: false,
         sortOrder: 0,
+        preparation: line.preparation ? {
+          station: line.preparation.station || 'kitchen',
+          estimatedMinutes: Number(line.preparation.estimated_minutes || 0),
+          ingredients: { en:line.preparation.ingredients_en || [], de:line.preparation.ingredients_de || [] },
+          tools: { en:line.preparation.tools_en || [], de:line.preparation.tools_de || [] },
+          steps: { en:line.preparation.steps_en || [], de:line.preparation.steps_de || [] },
+          warning: { en:line.preparation.warning_en || '', de:line.preparation.warning_de || '' },
+        } : undefined,
       },
       quantity: line.quantity,
     })),
@@ -220,6 +229,14 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       available: Boolean(item.available),
       sortOrder: item.sort_order || 0,
       includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
+      preparation: {
+        station: item.prep_station || 'kitchen',
+        estimatedMinutes: Number(item.prep_minutes || 0),
+        ingredients: { en:item.prep_ingredients_en || [], de:item.prep_ingredients_de || [] },
+        tools: { en:item.prep_tools_en || [], de:item.prep_tools_de || [] },
+        steps: { en:item.prep_steps_en || [], de:item.prep_steps_de || [] },
+        warning: { en:item.prep_warning_en || '', de:item.prep_warning_de || '' },
+      },
     };
   });
 
@@ -269,6 +286,7 @@ async function loadPrivateRemoteState(restaurantId: string) {
         restaurant: user.restaurant_name || '',
         active: Boolean(user.active),
         mustChangePassword: Boolean(user.must_change_password),
+        station: user.station || 'all',
       }));
 
   return { orders, users };
@@ -280,7 +298,12 @@ function catalogRows(state: RemoteState, restaurantId: string): Record<string, R
     categories: state.categories.map(c => ({ id:c.id, restaurant_id:restaurantId, name_en:c.name.en, name_de:c.name.de, sort_order:c.sortOrder })),
     menu_items: state.items.map(i => ({ id:i.id, restaurant_id:restaurantId, category_id:i.categoryId, name_en:i.name.en, name_de:i.name.de,
       description_en:i.description.en, description_de:i.description.de, price:i.price, badge_en:i.badge?.en || null, badge_de:i.badge?.de || null,
-      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [] })),
+      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [],
+      prep_station:i.preparation?.station || 'kitchen', prep_minutes:i.preparation?.estimatedMinutes || 0,
+      prep_ingredients_en:i.preparation?.ingredients.en || [], prep_ingredients_de:i.preparation?.ingredients.de || [],
+      prep_tools_en:i.preparation?.tools.en || [], prep_tools_de:i.preparation?.tools.de || [],
+      prep_steps_en:i.preparation?.steps.en || [], prep_steps_de:i.preparation?.steps.de || [],
+      prep_warning_en:i.preparation?.warning.en || '', prep_warning_de:i.preparation?.warning.de || '' })),
     opening_hours: state.hours.map((h,index) => ({ id:appId('hour',h.day), restaurant_id:restaurantId, day:h.day, open_time:h.open, close_time:h.close, enabled:h.enabled, sort_order:index+1 })),
   };
 }
@@ -314,11 +337,25 @@ export interface OrderInput {
   source?: 'menu' | 'pos';
 }
 
+function getOrderClientToken() {
+  const storageKey = 'sweezypop-order-client';
+  try {
+    const existing = window.localStorage.getItem(storageKey);
+    if (existing) return existing;
+    const token = crypto.randomUUID();
+    window.localStorage.setItem(storageKey, token);
+    return token;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 export async function createRemoteOrder(input: OrderInput): Promise<Order> {
   if (!supabase) throw new Error('Bestellungen sind derzeit nicht verfuegbar.');
   const { data, error } = await supabase.rpc('place_order', {
     p_slug:restaurantSlug, p_request_key:input.requestKey, p_name:input.name.trim(), p_notes:input.notes.trim(),
     p_lines:input.lines.map(line => ({ id:line.item.id, quantity:line.quantity })), p_source:input.source || 'menu',
+    p_client_token:input.source === 'pos' ? null : getOrderClientToken(),
   });
   if (error) throw error;
   if (!data?.id || !data?.created_at) throw new Error('Keine Bestaetigung vom Server. Bitte erneut versuchen.');
@@ -415,7 +452,7 @@ export async function deletePosDraft(id: string) {
 
 export async function saveRemoteUsers(users: AppUser[], previous: AppUser[]) {
   if (!supabase) throw new Error('Supabase is not configured.');
-  const fields = (u: AppUser) => ({ name:u.name,role:u.role,active:u.active,restaurant_name:u.restaurant });
+  const fields = (u: AppUser) => ({ name:u.name,role:u.role,active:u.active,restaurant_name:u.restaurant,station:u.station || 'all' });
   const changes = previous.flatMap(old => {
     const next = users.find(u => u.id===old.id);
     if (!next) return [];
@@ -435,6 +472,7 @@ export interface AdminUserPayload {
   role: AppUser['role'];
   restaurant: string;
   active: boolean;
+  station?: string;
 }
 
 export async function createAdminUser(payload: AdminUserPayload) {
@@ -463,5 +501,102 @@ export async function deleteAdminUser(profileId: string) {
 export async function completeTemporaryPasswordChange(password: string) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.functions.invoke('complete-password-change', { body: { password } });
+  if (error) throw error;
+}
+
+function shiftFromRow(value: Record<string, unknown>): StaffShift {
+  return {
+    id:String(value.id),
+    status:String(value.status) as StaffShift['status'],
+    startedAt:String(value.started_at),
+    endedAt:value.ended_at ? String(value.ended_at) : undefined,
+    ordersHandled:Number(value.orders_handled || 0),
+    staffProfileId:String(value.staff_profile_id),
+  };
+}
+
+export async function loadCurrentStaffShift(): Promise<StaffShift | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_current_staff_shift');
+  if (error) throw error;
+  return data ? shiftFromRow(data as Record<string,unknown>) : null;
+}
+
+export async function startStaffShift(): Promise<StaffShift> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('start_staff_shift');
+  if (error) throw error;
+  return shiftFromRow(data as Record<string,unknown>);
+}
+
+export async function endStaffShift(): Promise<StaffShift> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('end_staff_shift');
+  if (error) throw error;
+  return shiftFromRow(data as Record<string,unknown>);
+}
+
+export async function loadStaffOrderBoard(): Promise<StaffBoardOrder[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_staff_order_board');
+  if (error) throw error;
+  return ((data || []) as DbOrder[]).map(row => ({
+    ...orderFromRow(row),
+    acceptedAt:row.accepted_at || undefined,
+    preparingAt:row.preparing_at || undefined,
+    readyAt:row.ready_at || undefined,
+  }));
+}
+
+export async function updateStaffOrderStatus(order: StaffBoardOrder, status: Order['status']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('set_staff_order_status', {
+    p_id:order.id,
+    p_expected:order.status,
+    p_status:status,
+  });
+  if (error) throw error;
+  return data as { id: string; status: Order['status'] };
+}
+
+export function subscribeToStaffOrders(
+  restaurantId: string,
+  onChange: () => void,
+  onConnectionChange?: (state: 'live' | 'reconnecting' | 'offline') => void,
+) {
+  if (!supabase) return () => undefined;
+  const client = supabase;
+  const channel = client
+    .channel(`staff-orders-${restaurantId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event:'*', schema:'public', table:'orders', filter:`restaurant_id=eq.${restaurantId}` }, onChange)
+    .subscribe(status => onConnectionChange?.(status === 'SUBSCRIBED' ? 'live' : status === 'CLOSED' || status === 'CHANNEL_ERROR' ? 'offline' : 'reconnecting'));
+  return () => { void client.removeChannel(channel); };
+}
+
+export async function loadStaffDirectory(): Promise<StaffDirectoryEntry[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_staff_directory');
+  if (error) throw error;
+  return ((data || []) as Array<Record<string,unknown>>).map(entry => ({
+    id:String(entry.id),
+    authUserId:entry.auth_user_id ? String(entry.auth_user_id) : undefined,
+    name:String(entry.name || ''),
+    email:String(entry.email || ''),
+    active:Boolean(entry.active),
+    station:String(entry.station || 'all'),
+    restaurant:String(entry.restaurant_name || ''),
+    currentShift:entry.current_shift ? shiftFromRow(entry.current_shift as Record<string,unknown>) : undefined,
+    recentShifts:((entry.recent_shifts || []) as Array<Record<string,unknown>>).map(shiftFromRow),
+  }));
+}
+
+export async function updateStaffMember(profileId: string, name: string, active: boolean, station: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('update_staff_member', {
+    p_profile_id:profileId,
+    p_name:name,
+    p_active:active,
+    p_station:station,
+  });
   if (error) throw error;
 }

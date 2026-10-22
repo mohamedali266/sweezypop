@@ -9,7 +9,7 @@ const words = {
   de: {
     title:'Bestellungen', subtitle:'Aktuelle Bestellungen bearbeiten und das Archiv gezielt durchsuchen.', live:'Live', today:'Heute', history:'Verlauf', cancelled:'Storniert',
     search:'Nummer oder Name suchen', status:'Status', source:'Quelle', all:'Alle', menu:'Online-Menü', pos:'Kasse', from:'Von', to:'Bis', filters:'Filter',
-    new:'Neu', preparing:'In Zubereitung', done:'Fertig', cancelledStatus:'Storniert', ordersToday:'Bestellungen heute', revenueToday:'Umsatz heute',
+    new:'Neu', accepted:'Angenommen', preparing:'In Zubereitung', ready:'Abholbereit', done:'Abgeholt', cancelledStatus:'Storniert', ordersToday:'Bestellungen heute', revenueToday:'Umsatz heute',
     order:'Bestellung', customer:'Name', time:'Zeit', amount:'Betrag', actions:'Aktionen', details:'Details', noOrders:'Keine Bestellungen für diese Auswahl.',
     loading:'Bestellungen werden geladen …', loadFailed:'Bestellungen konnten nicht geladen werden.', updateFailed:'Status konnte nicht gespeichert werden. Bitte aktualisieren.',
     previous:'Zurück', next:'Weiter', page:'Seite', of:'von', results:'Ergebnisse', orderDetails:'Bestelldetails', items:'Artikel', notes:'Anmerkungen', noNotes:'Keine Anmerkungen',
@@ -18,7 +18,7 @@ const words = {
   en: {
     title:'Orders', subtitle:'Process active orders and search the archive without loading years of history.', live:'Live', today:'Today', history:'History', cancelled:'Cancelled',
     search:'Search number or name', status:'Status', source:'Source', all:'All', menu:'Online menu', pos:'Register', from:'From', to:'To', filters:'Filters',
-    new:'New', preparing:'Preparing', done:'Done', cancelledStatus:'Cancelled', ordersToday:'Orders today', revenueToday:'Revenue today',
+    new:'New', accepted:'Accepted', preparing:'Preparing', ready:'Ready', done:'Collected', cancelledStatus:'Cancelled', ordersToday:'Orders today', revenueToday:'Revenue today',
     order:'Order', customer:'Name', time:'Time', amount:'Amount', actions:'Actions', details:'Details', noOrders:'No orders match this view.',
     loading:'Loading orders …', loadFailed:'Orders could not be loaded.', updateFailed:'Status could not be saved. Please refresh.',
     previous:'Previous', next:'Next', page:'Page', of:'of', results:'results', orderDetails:'Order details', items:'Items', notes:'Notes', noNotes:'No notes',
@@ -27,7 +27,7 @@ const words = {
 } as const;
 
 const emptyStats: OrderWorkspaceStats = { newCount:0, preparingCount:0, todayCount:0, todayRevenue:0 };
-const statusOrder: OrderStatus[] = ['new','preparing','done','cancelled'];
+const statusOrder: OrderStatus[] = ['new','accepted','preparing','ready','done','cancelled'];
 
 function money(value: number, locale: Locale) {
   return new Intl.NumberFormat(locale === 'de' ? 'de-DE' : 'en-DE',{style:'currency',currency:'EUR'}).format(value);
@@ -37,7 +37,7 @@ function dateTime(value: string, locale: Locale) {
 }
 function statusLabel(status: OrderStatus, locale: Locale) {
   const text=words[locale];
-  return {new:text.new,preparing:text.preparing,done:text.done,cancelled:text.cancelledStatus}[status];
+  return {new:text.new,accepted:text.accepted,preparing:text.preparing,ready:text.ready,done:text.done,cancelled:text.cancelledStatus}[status];
 }
 function toUtcBoundary(value: string, addDay=false) {
   if (!value) return '';
@@ -145,7 +145,7 @@ export function OrdersWorkspace({ locale, siteName, onOrderUpdated }: { locale:L
       <section><h3>{text.items}</h3><div className="order-detail-lines">{selected.lines.map((line,index)=><div key={`${line.item.id}-${index}`}><span>{line.quantity} × {line.item.name[locale]}</span><strong>{money(line.item.price*line.quantity,locale)}</strong></div>)}</div></section>
       <section><h3>{text.notes}</h3><p className="order-note">{selected.notes||text.noNotes}</p></section>
       <section><h3>{text.timeline}</h3><ol className="order-timeline"><li><span/><div><strong>{text.created}</strong><small>{dateTime(selected.createdAt,locale)}</small></div></li>{timeline.map((event,index)=><li key={`${event.createdAt}-${index}`}><span/><div><strong>{statusLabel(event.nextStatus,locale)}</strong><small>{dateTime(event.createdAt,locale)}</small></div></li>)}</ol></section>
-      <div className="order-drawer-actions"><OrderReceipt order={selected} siteName={siteName} locale={locale}/>{selected.status==='new'&&<button onClick={()=>void changeStatus(selected,'preparing')}>{text.preparing}</button>}{selected.status==='preparing'&&<button onClick={()=>void changeStatus(selected,'done')}>{text.done}</button>}{(selected.status==='new'||selected.status==='preparing')&&<button className="danger" onClick={()=>void changeStatus(selected,'cancelled')}>{text.cancelledStatus}</button>}</div>
+      <div className="order-drawer-actions"><OrderReceipt order={selected} siteName={siteName} locale={locale}/>{selected.status==='new'&&<button onClick={()=>void changeStatus(selected,'accepted')}>{text.accepted}</button>}{selected.status==='accepted'&&<button onClick={()=>void changeStatus(selected,'preparing')}>{text.preparing}</button>}{selected.status==='preparing'&&<button onClick={()=>void changeStatus(selected,'ready')}>{text.ready}</button>}{selected.status==='ready'&&<button onClick={()=>void changeStatus(selected,'done')}>{text.done}</button>}{(['new','accepted','preparing','ready'] as OrderStatus[]).includes(selected.status)&&<button className="danger" onClick={()=>void changeStatus(selected,'cancelled')}>{text.cancelledStatus}</button>}</div>
     </aside></>}
   </section>;
 }

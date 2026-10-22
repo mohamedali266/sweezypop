@@ -9,11 +9,13 @@ Deno.serve(async (request) => {
     const body = await request.json();
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
-    const role = body.role === 'admin' ? 'admin' : 'owner';
+    const role = body.role === 'admin' || body.role === 'staff' ? body.role : 'owner';
+    const station = String(body.station || 'all').trim();
     const restaurantName = String(body.restaurant || adminProfile.restaurant_name || '').trim();
     const active = body.active !== false;
 
     if (!name || !email) return jsonResponse({ error: 'Name and email are required.' }, 400);
+    if (!station || station.length > 60) return jsonResponse({ error: 'Invalid staff station.' }, 400);
 
     const temporaryPassword = generateTemporaryPassword();
     const { data: authData, error: authError } = await client.auth.admin.createUser({
@@ -34,6 +36,7 @@ Deno.serve(async (request) => {
       role,
       restaurant_name: restaurantName,
       active,
+      station,
       must_change_password: true,
       temporary_password_issued_at: new Date().toISOString(),
       password_changed_at: null,
@@ -55,6 +58,7 @@ Deno.serve(async (request) => {
         restaurant: savedProfile.restaurant_name || '',
         active: Boolean(savedProfile.active),
         mustChangePassword: Boolean(savedProfile.must_change_password),
+        station: savedProfile.station || 'all',
       },
       temporaryPassword,
     });
