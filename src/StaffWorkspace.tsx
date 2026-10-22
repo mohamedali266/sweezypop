@@ -7,8 +7,10 @@ import {
   CircleDot,
   Clock3,
   LogOut,
+  Monitor,
   PackageCheck,
   Play,
+  QrCode,
   RefreshCw,
   Timer,
   Utensils,
@@ -36,7 +38,7 @@ interface StaffWorkspaceProps {
   onToggleLocale: () => void;
   onLogout: () => void;
 }
-type BoardStatus = 'new' | 'accepted' | 'preparing' | 'ready';
+type BoardStage = 'new' | 'preparing' | 'ready';
 type ConnectionState = 'live' | 'reconnecting' | 'offline';
 
 type Preparation = {
@@ -55,7 +57,7 @@ type SelectedPreparation = {
   preparation: Preparation;
 };
 
-const boardStatuses: BoardStatus[] = ['new', 'accepted', 'preparing', 'ready'];
+const boardStages: BoardStage[] = ['new', 'preparing', 'ready'];
 
 const words = {
   de: {
@@ -63,9 +65,9 @@ const words = {
     startShift: 'Schicht starten', starting: 'Schicht wird gestartet …', currentTime: 'Aktuelle Uhrzeit', signedInAs: 'Angemeldet als',
     live: 'Live verbunden', reconnecting: 'Verbindung wird hergestellt', offline: 'Offline', shiftTime: 'Schichtzeit',
     endShift: 'Schicht beenden', ending: 'Wird beendet …', logout: 'Abmelden', board: 'Bestellungen', boardHint: 'Aktive Bestellungen nach Arbeitsstand',
-    new: 'Neu', accepted: 'Angenommen', preparing: 'In Zubereitung', ready: 'Abholbereit', collected: 'Abgeholt',
+    new: 'Neu', accepted: 'Angenommen', preparing: 'In Zubereitung', ready: 'Bereit', collected: 'Abgeholt',
     accept: 'Annehmen', startPreparing: 'Zubereitung starten', markReady: 'Als bereit markieren', markCollected: 'Als abgeholt markieren',
-    order: 'Bestellung', waiting: 'wartet', customer: 'Kunde', notes: 'Anmerkungen', onlineMenu: 'Online-Menü', register: 'Kasse',
+    order: 'Bestellung', waiting: 'wartet', customer: 'Kunde', notes: 'Anmerkungen', onlineMenu: 'Menü', register: 'POS',
     item: 'Artikel', items: 'Artikel', details: 'Zubereitung anzeigen', noOrders: 'Keine Bestellungen in diesem Status.',
     quietBoard: 'Alles erledigt', quietBoardBody: 'Neue Bestellungen erscheinen hier automatisch.', loading: 'Arbeitsbereich wird geladen …',
     loadFailed: 'Der Arbeitsbereich konnte nicht geladen werden.', actionFailed: 'Der Status konnte nicht gespeichert werden. Bitte erneut versuchen.',
@@ -76,6 +78,7 @@ const words = {
     summaryTitle: 'Schicht abgeschlossen', summaryBody: 'Deine Schicht wurde sicher beendet.', duration: 'Dauer', handled: 'Bearbeitet', completed: 'Abgeschlossen',
     backToStart: 'Zur Startseite', hourShort: 'Std.', minuteShort: 'Min.', justNow: 'gerade eben', elapsed: 'vergangen', refresh: 'Aktualisieren',
     enableSound: 'Ton aktivieren', enablingSound: 'Wird aktiviert …', soundFailed: 'Ton konnte nicht aktiviert werden. Bitte erneut versuchen.',
+    soundPromptTitle: 'Bestellton aktivieren', soundPromptBody: 'Aktiviere den Ton, damit du neue Bestellungen auch bei voller Küche sofort bemerkst.', notNow: 'Nicht jetzt', source: 'Quelle',
   },
   en: {
     workspace: 'Staff workspace', startTitle: 'Ready for service?', startBody: 'Start your shift to receive new orders live.',
@@ -84,7 +87,7 @@ const words = {
     endShift: 'End shift', ending: 'Ending …', logout: 'Sign out', board: 'Orders', boardHint: 'Active orders grouped by workflow stage',
     new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', collected: 'Collected',
     accept: 'Accept', startPreparing: 'Start preparing', markReady: 'Mark ready', markCollected: 'Mark collected',
-    order: 'Order', waiting: 'waiting', customer: 'Customer', notes: 'Notes', onlineMenu: 'Online menu', register: 'Register',
+    order: 'Order', waiting: 'waiting', customer: 'Customer', notes: 'Notes', onlineMenu: 'Menu', register: 'POS',
     item: 'item', items: 'items', details: 'View preparation', noOrders: 'No orders in this stage.',
     quietBoard: 'All caught up', quietBoardBody: 'New orders will appear here automatically.', loading: 'Loading staff workspace …',
     loadFailed: 'The staff workspace could not be loaded.', actionFailed: 'The status could not be saved. Please try again.',
@@ -95,6 +98,7 @@ const words = {
     summaryTitle: 'Shift complete', summaryBody: 'Your shift was ended safely.', duration: 'Duration', handled: 'Handled', completed: 'Completed',
     backToStart: 'Back to start', hourShort: 'hr', minuteShort: 'min', justNow: 'just now', elapsed: 'elapsed', refresh: 'Refresh',
     enableSound: 'Enable sound', enablingSound: 'Enabling …', soundFailed: 'Sound could not be enabled. Please try again.',
+    soundPromptTitle: 'Enable order sound', soundPromptBody: 'Enable sound so every new order is noticed immediately, even during a busy service.', notNow: 'Not now', source: 'Source',
   },
 } as const;
 
@@ -173,19 +177,26 @@ function orderAge(createdAt: string, now: number, locale: Locale) {
   return formatDuration(now - created, locale);
 }
 
-function statusLabel(status: BoardStatus, locale: Locale) {
-  return words[locale][status];
+function statusLabel(stage: BoardStage, locale: Locale) {
+  return words[locale][stage];
 }
 
-function nextAction(status: BoardStatus, locale: Locale) {
+function stageForStatus(status: OrderStatus): BoardStage | null {
+  if (status === 'new') return 'new';
+  if (status === 'accepted' || status === 'preparing') return 'preparing';
+  if (status === 'ready') return 'ready';
+  return null;
+}
+
+function nextAction(status: OrderStatus, locale: Locale) {
   const text = words[locale];
-  const map: Record<BoardStatus, { next: OrderStatus; label: string; icon: typeof Check }> = {
-    new: { next: 'accepted' as OrderStatus, label: text.accept, icon: Check },
+  const map: Partial<Record<OrderStatus, { next: OrderStatus; label: string; icon: typeof Check }>> = {
+    new: { next: 'preparing' as OrderStatus, label: text.startPreparing, icon: ChefHat },
     accepted: { next: 'preparing' as OrderStatus, label: text.startPreparing, icon: ChefHat },
     preparing: { next: 'ready' as OrderStatus, label: text.markReady, icon: PackageCheck },
     ready: { next: 'done' as OrderStatus, label: text.markCollected, icon: Check },
   };
-  return map[status];
+  return map[status] ?? map.new!;
 }
 
 export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restaurantId, onToggleLocale, onLogout }: StaffWorkspaceProps) {
@@ -197,7 +208,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState('');
   const [connection, setConnection] = useState<ConnectionState>(navigator.onLine ? 'reconnecting' : 'offline');
-  const [activeMobileStatus, setActiveMobileStatus] = useState<BoardStatus>('new');
+  const [activeMobileStatus, setActiveMobileStatus] = useState<BoardStage>('new');
   const [pendingOrderId, setPendingOrderId] = useState('');
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
   const [selectedPreparation, setSelectedPreparation] = useState<SelectedPreparation | null>(null);
@@ -206,6 +217,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const [endError, setEndError] = useState('');
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [audioEnabling, setAudioEnabling] = useState(false);
+  const [showSoundPrompt, setShowSoundPrompt] = useState(false);
+  const [soundError, setSoundError] = useState('');
   const [now, setNow] = useState(Date.now());
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialBoardLoaded = useRef(false);
@@ -271,7 +284,10 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
         const current = await loadCurrentStaffShift();
         if (!mounted.current) return;
         setShift(current);
-        if (current) await refreshBoard(true);
+        if (current) {
+          setShowSoundPrompt(true);
+          await refreshBoard(true);
+        }
         else setConnection(navigator.onLine ? 'live' : 'offline');
       } catch {
         if (mounted.current) setError(text.loadFailed);
@@ -328,10 +344,11 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     setStarting(true);
     setError('');
     try {
-      const soundReady = await unlockAudio();
-      setAudioEnabled(soundReady);
       const nextShift = await startStaffShift();
       setShift(nextShift);
+      setAudioEnabled(false);
+      setSoundError('');
+      setShowSoundPrompt(true);
       setSummary(null);
       initialBoardLoaded.current = false;
       knownOrderIds.current = new Set();
@@ -345,14 +362,21 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
 
   const enableShiftAudio = async () => {
     setAudioEnabling(true);
-    setError('');
+    setSoundError('');
     try {
       const enabled = await unlockAudio();
       setAudioEnabled(enabled);
-      if (!enabled) setError(text.soundFailed);
+      if (enabled) {
+        playNewOrderSound();
+        setShowSoundPrompt(false);
+      } else {
+        setSoundError(text.soundFailed);
+        setShowSoundPrompt(true);
+      }
     } catch {
       setAudioEnabled(false);
-      setError(text.soundFailed);
+      setSoundError(text.soundFailed);
+      setShowSoundPrompt(true);
     } finally {
       setAudioEnabling(false);
     }
@@ -370,6 +394,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
       setShift(null);
       setOrders([]);
       setAudioEnabled(false);
+      setSoundError('');
+      setShowSoundPrompt(false);
       setShowEndConfirmation(false);
       initialBoardLoaded.current = false;
       knownOrderIds.current = new Set();
@@ -380,8 +406,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     }
   };
 
-  const advanceOrder = async (order: StaffBoardOrder, status: BoardStatus) => {
-    const action = nextAction(status, locale);
+  const advanceOrder = async (order: StaffBoardOrder) => {
+    const action = nextAction(order.status, locale);
     setPendingOrderId(order.id);
     setError('');
     try {
@@ -394,10 +420,10 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     }
   };
 
-  const groupedOrders = useMemo(() => Object.fromEntries(boardStatuses.map(status => [
-    status,
-    orders.filter(order => order.status === status).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-  ])) as Record<BoardStatus, StaffBoardOrder[]>, [orders]);
+  const groupedOrders = useMemo(() => Object.fromEntries(boardStages.map(stage => [
+    stage,
+    orders.filter(order => stageForStatus(order.status) === stage).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+  ])) as Record<BoardStage, StaffBoardOrder[]>, [orders]);
 
   if (loading) {
     return <main className="staff-workspace staff-centered-state" lang={locale} aria-busy="true">
@@ -451,7 +477,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     </main>;
   }
 
-  const activeCount = boardStatuses.reduce((count, status) => count + groupedOrders[status].length, 0);
+  const activeCount = boardStages.reduce((count, stage) => count + groupedOrders[stage].length, 0);
 
   return <main className="staff-workspace staff-active" lang={locale}>
     <header className="staff-topbar">
@@ -482,30 +508,46 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     {error && <ErrorMessage message={error} onRetry={() => void refreshBoard()} label={text.retry} />}
 
     <nav className="staff-mobile-statuses" aria-label={text.board}>
-      {boardStatuses.map(status => <button key={status} aria-pressed={activeMobileStatus === status} onClick={() => setActiveMobileStatus(status)}>
-        <span>{statusLabel(status, locale)}</span><strong>{groupedOrders[status].length}</strong>
+      {boardStages.map(stage => <button key={stage} aria-pressed={activeMobileStatus === stage} onClick={() => setActiveMobileStatus(stage)}>
+        <span>{statusLabel(stage, locale)}</span><strong>{groupedOrders[stage].length}</strong>
       </button>)}
     </nav>
 
     <section className="staff-board" aria-live="polite">
-      {boardStatuses.map(status => <div key={status} className={`staff-column staff-column-${status} ${activeMobileStatus === status ? 'is-mobile-active' : ''}`}>
-        <header><div><span className="staff-status-dot" /><h2>{statusLabel(status, locale)}</h2></div><strong>{groupedOrders[status].length}</strong></header>
+      {boardStages.map(stage => <div key={stage} className={`staff-column staff-column-${stage} ${activeMobileStatus === stage ? 'is-mobile-active' : ''}`}>
+        <header><div><span className="staff-status-dot" /><h2>{statusLabel(stage, locale)}</h2></div><strong>{groupedOrders[stage].length}</strong></header>
         <div className="staff-column-scroll">
-          {groupedOrders[status].length ? groupedOrders[status].map(order => <OrderCard
+          {groupedOrders[stage].length ? groupedOrders[stage].map(order => <OrderCard
             key={order.id}
             order={order}
-            status={status}
+            stage={stage}
             locale={locale}
             now={now}
             isNew={newOrderIds.has(order.id)}
             busy={pendingOrderId === order.id}
-            onAdvance={() => void advanceOrder(order, status)}
+            onAdvance={() => void advanceOrder(order)}
             onPreparation={setSelectedPreparation}
           />) : <div className="staff-column-empty"><Check aria-hidden="true" /><span>{text.noOrders}</span></div>}
         </div>
       </div>)}
       {!activeCount && <div className="staff-board-empty"><PackageCheck aria-hidden="true" /><h2>{text.quietBoard}</h2><p>{text.quietBoardBody}</p></div>}
     </section>
+
+    {showSoundPrompt && !audioEnabled && <div className="staff-dialog-layer" role="presentation">
+      <section className="staff-sound-dialog" role="dialog" aria-modal="true" aria-labelledby="sound-prompt-title">
+        <span className="staff-dialog-symbol"><Volume2 aria-hidden="true" /></span>
+        <p className="staff-eyebrow">{text.workspace}</p>
+        <h2 id="sound-prompt-title">{text.soundPromptTitle}</h2>
+        <p>{text.soundPromptBody}</p>
+        {soundError && <div className="staff-dialog-error" role="alert"><AlertTriangle aria-hidden="true" /><span>{soundError}</span></div>}
+        <div className="staff-dialog-actions">
+          <button className="staff-secondary-button" disabled={audioEnabling} onClick={() => setShowSoundPrompt(false)}>{text.notNow}</button>
+          <button className="staff-primary-button" disabled={audioEnabling} onClick={() => void enableShiftAudio()}>
+            {audioEnabling ? <RefreshCw className="staff-spin" aria-hidden="true" /> : <Volume2 aria-hidden="true" />}{audioEnabling ? text.enablingSound : text.enableSound}
+          </button>
+        </div>
+      </section>
+    </div>}
 
     {selectedPreparation && <PreparationDialog value={selectedPreparation} locale={locale} onClose={() => setSelectedPreparation(null)} />}
     {showEndConfirmation && <div className="staff-dialog-layer" role="presentation" onMouseDown={event => event.target === event.currentTarget && setShowEndConfirmation(false)}>
@@ -535,9 +577,9 @@ function ErrorMessage({ message, onRetry, label }: { message: string; onRetry: (
   return <div className="staff-error" role="alert"><AlertTriangle aria-hidden="true" /><span>{message}</span><button onClick={onRetry}><RefreshCw aria-hidden="true" />{label}</button></div>;
 }
 
-function OrderCard({ order, status, locale, now, isNew, busy, onAdvance, onPreparation }: {
+function OrderCard({ order, stage, locale, now, isNew, busy, onAdvance, onPreparation }: {
   order: StaffBoardOrder & Order;
-  status: BoardStatus;
+  stage: BoardStage;
   locale: Locale;
   now: number;
   isNew: boolean;
@@ -546,16 +588,20 @@ function OrderCard({ order, status, locale, now, isNew, busy, onAdvance, onPrepa
   onPreparation: (value: SelectedPreparation) => void;
 }) {
   const text = words[locale];
-  const action = nextAction(status, locale);
+  const action = nextAction(order.status, locale);
   const ActionIcon = action.icon;
+  const SourceIcon = order.source === 'pos' ? Monitor : QrCode;
   const itemCount = order.lines.reduce((sum, line) => sum + line.quantity, 0);
   const number = order.orderNumber || order.id.slice(0, 8).toUpperCase();
   return <article className={`staff-order-card ${isNew ? 'staff-order-new' : ''}`}>
     <header>
       <div><small>{text.order}</small><strong>#{number}</strong></div>
-      <span className={`staff-order-age ${status === 'new' ? 'is-urgent' : ''}`}><Timer aria-hidden="true" />{orderAge(order.createdAt, now, locale)}</span>
+      <div className="staff-order-card-meta">
+        <span className={`staff-source-badge staff-source-${order.source}`} title={text.source}><SourceIcon aria-hidden="true" />{order.source === 'pos' ? text.register : text.onlineMenu}</span>
+        <span className={`staff-order-age ${stage === 'new' ? 'is-urgent' : ''}`}><Timer aria-hidden="true" />{orderAge(order.createdAt, now, locale)}</span>
+      </div>
     </header>
-    <div className="staff-order-customer"><strong>{order.customerName}</strong><span>{order.source === 'pos' ? text.register : text.onlineMenu} · {itemCount} {itemCount === 1 ? text.item : text.items}</span></div>
+    <div className="staff-order-customer"><strong>{order.customerName}</strong><span>{itemCount} {itemCount === 1 ? text.item : text.items}</span></div>
     {order.notes && <p className="staff-order-note"><span>{text.notes}</span>{order.notes}</p>}
     <div className="staff-order-lines">
       {order.lines.map((line, index) => {
@@ -568,7 +614,7 @@ function OrderCard({ order, status, locale, now, isNew, busy, onAdvance, onPrepa
       })}
     </div>
     <footer>
-      <span className={`staff-state-pill staff-state-${status}`}>{statusLabel(status, locale)}</span>
+      <span className={`staff-state-pill staff-state-${stage}`}>{statusLabel(stage, locale)}</span>
       <button className="staff-order-action" disabled={busy} onClick={onAdvance}>
         {busy ? <RefreshCw className="staff-spin" aria-hidden="true" /> : <ActionIcon aria-hidden="true" />}{action.label}
       </button>

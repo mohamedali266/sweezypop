@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -94,13 +94,16 @@ test('staff need an open shift and can only advance orders through the kitchen w
   const order=await place(randomUUID(),[{id:'drink',quantity:1}],'menu','staff-flow-client-0001');
   const board=(await db.query('select get_staff_order_board() result')).rows[0].result;
   assert.ok(board.some(row=>row.id===order.id));
-  for(const [from,to] of [['new','accepted'],['accepted','preparing'],['preparing','ready'],['ready','done']]) {
+  for(const [from,to] of [['new','preparing'],['preparing','ready'],['ready','done']]) {
     await db.query('select set_staff_order_status($1,$2,$3)',[order.id,from,to]);
   }
   assert.equal((await db.query('select status from orders where id=$1',[order.id])).rows[0].status,'done');
+  const timings=(await db.query('select accepted_at,preparing_at from orders where id=$1',[order.id])).rows[0];
+  assert.ok(timings.accepted_at);
+  assert.ok(timings.preparing_at);
   const ended=(await db.query('select end_staff_shift() result')).rows[0].result;
   assert.equal(ended.orders_handled,1);
-  await assert.rejects(db.query('select set_staff_order_status($1,$2,$3)',[saved.id,'new','accepted']),/Active staff shift required/);
+  await assert.rejects(db.query('select set_staff_order_status($1,$2,$3)',[saved.id,'new','preparing']),/Active staff shift required/);
 });
 test('owners can edit existing staff but cannot change roles or create profiles',async () => {
   await db.query("select set_config('test.uid',$1,false)",[owner]);
