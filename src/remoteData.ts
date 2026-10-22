@@ -475,33 +475,47 @@ export interface AdminUserPayload {
   station?: string;
 }
 
+async function invokeEdgeFunction<T>(name: string, body: object): Promise<T> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (!error) return data as T;
+
+  const response = (error as { context?: Response }).context;
+  if (response) {
+    try {
+      const payload = await response.clone().json() as { error?: unknown; message?: unknown };
+      const detail = typeof payload.error === 'string' ? payload.error : typeof payload.message === 'string' ? payload.message : '';
+      if (detail) throw new Error(detail);
+    } catch (caught) {
+      if (caught instanceof Error && caught.message !== 'Unexpected end of JSON input') throw caught;
+    }
+  }
+  throw new Error(error.message || 'The server could not complete this request.');
+}
+
 export async function createAdminUser(payload: AdminUserPayload) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-  const { data, error } = await supabase.functions.invoke('admin-create-user', { body: payload });
-  if (error) throw error;
+  const data = await invokeEdgeFunction<{ user?: AppUser; temporaryPassword?: string }>('admin-create-user', payload);
   if (!data?.user || !data?.temporaryPassword) throw new Error('User function returned an invalid response.');
   return data as { user: AppUser; temporaryPassword: string };
 }
 
 export async function resetAdminUserPassword(profileId: string) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-  const { data, error } = await supabase.functions.invoke('admin-reset-password', { body: { profileId } });
-  if (error) throw error;
+  const data = await invokeEdgeFunction<{ profileId?: string; temporaryPassword?: string }>('admin-reset-password', { profileId });
   if (!data?.temporaryPassword) throw new Error('Reset function returned an invalid response.');
   return data as { profileId: string; temporaryPassword: string };
 }
 
 export async function deleteAdminUser(profileId: string) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-  const { data, error } = await supabase.functions.invoke('admin-delete-user', { body: { profileId } });
-  if (error) throw error;
+  const data = await invokeEdgeFunction<{ ok?: boolean }>('admin-delete-user', { profileId });
   if (!data?.ok) throw new Error('User deletion was not confirmed.');
 }
 
 export async function completeTemporaryPasswordChange(password: string) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-  const { error } = await supabase.functions.invoke('complete-password-change', { body: { password } });
-  if (error) throw error;
+  await invokeEdgeFunction<{ ok?: boolean }>('complete-password-change', { password });
 }
 
 function shiftFromRow(value: Record<string, unknown>): StaffShift {

@@ -954,7 +954,7 @@ function PasswordChangePage({ locale, theme, onComplete, onLogout }: { locale: L
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (password.length < 12) {
+    if (password.length < 12 || password.length > 128 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^a-zA-Z0-9]/.test(password)) {
       setError(t(locale, 'passwordTooShort'));
       return;
     }
