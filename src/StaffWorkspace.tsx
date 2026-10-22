@@ -5,6 +5,7 @@ import {
   Check,
   ChefHat,
   CircleDot,
+  CircleX,
   Clock3,
   LogOut,
   Monitor,
@@ -79,6 +80,7 @@ const words = {
     backToStart: 'Zur Startseite', hourShort: 'Std.', minuteShort: 'Min.', justNow: 'gerade eben', elapsed: 'vergangen', refresh: 'Aktualisieren',
     enableSound: 'Ton aktivieren', enablingSound: 'Wird aktiviert …', soundFailed: 'Ton konnte nicht aktiviert werden. Bitte erneut versuchen.',
     soundPromptTitle: 'Bestellton aktivieren', soundPromptBody: 'Aktiviere den Ton, damit du neue Bestellungen auch bei voller Küche sofort bemerkst.', notNow: 'Nicht jetzt', source: 'Quelle',
+    cancelOrder: 'Stornieren', cancelling: 'Wird storniert …', cancelTitle: 'Bestellung stornieren?', cancelBody: 'Diese Bestellung wird aus dem aktiven Arbeitsbereich entfernt und als storniert gespeichert.', keepOrder: 'Bestellung behalten', confirmCancel: 'Ja, stornieren', cancelFailed: 'Die Bestellung konnte nicht storniert werden. Bitte erneut versuchen.',
   },
   en: {
     workspace: 'Staff workspace', startTitle: 'Ready for service?', startBody: 'Start your shift to receive new orders live.',
@@ -99,6 +101,7 @@ const words = {
     backToStart: 'Back to start', hourShort: 'hr', minuteShort: 'min', justNow: 'just now', elapsed: 'elapsed', refresh: 'Refresh',
     enableSound: 'Enable sound', enablingSound: 'Enabling …', soundFailed: 'Sound could not be enabled. Please try again.',
     soundPromptTitle: 'Enable order sound', soundPromptBody: 'Enable sound so every new order is noticed immediately, even during a busy service.', notNow: 'Not now', source: 'Source',
+    cancelOrder: 'Cancel order', cancelling: 'Cancelling …', cancelTitle: 'Cancel this order?', cancelBody: 'This order will leave the active workspace and remain recorded as cancelled.', keepOrder: 'Keep order', confirmCancel: 'Yes, cancel', cancelFailed: 'The order could not be cancelled. Please try again.',
   },
 } as const;
 
@@ -213,8 +216,10 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
   const [selectedPreparation, setSelectedPreparation] = useState<SelectedPreparation | null>(null);
   const [showEndConfirmation, setShowEndConfirmation] = useState(false);
+  const [cancellingOrder, setCancellingOrder] = useState<StaffBoardOrder | null>(null);
   const [summary, setSummary] = useState<{ duration: number; handled: number } | null>(null);
   const [endError, setEndError] = useState('');
+  const [cancelError, setCancelError] = useState('');
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [audioEnabling, setAudioEnabling] = useState(false);
   const [showSoundPrompt, setShowSoundPrompt] = useState(false);
@@ -323,15 +328,16 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   }, []);
 
   useEffect(() => {
-    if (!selectedPreparation && !showEndConfirmation) return;
+    if (!selectedPreparation && !showEndConfirmation && !cancellingOrder) return;
     const close = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setSelectedPreparation(null);
       setShowEndConfirmation(false);
+      setCancellingOrder(null);
     };
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
-  }, [selectedPreparation, showEndConfirmation]);
+  }, [cancellingOrder, selectedPreparation, showEndConfirmation]);
 
   useEffect(() => {
     if (!showEndConfirmation) return;
@@ -415,6 +421,21 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
       await refreshBoard();
     } catch {
       setError(text.actionFailed);
+    } finally {
+      setPendingOrderId('');
+    }
+  };
+
+  const cancelNewOrder = async () => {
+    if (!cancellingOrder || cancellingOrder.status !== 'new') return;
+    setPendingOrderId(cancellingOrder.id);
+    setCancelError('');
+    try {
+      await updateStaffOrderStatus(cancellingOrder, 'cancelled');
+      setCancellingOrder(null);
+      await refreshBoard();
+    } catch {
+      setCancelError(text.cancelFailed);
     } finally {
       setPendingOrderId('');
     }
@@ -526,11 +547,11 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
             isNew={newOrderIds.has(order.id)}
             busy={pendingOrderId === order.id}
             onAdvance={() => void advanceOrder(order)}
+            onCancel={stage === 'new' ? () => { setCancelError(''); setCancellingOrder(order); } : undefined}
             onPreparation={setSelectedPreparation}
           />) : <div className="staff-column-empty"><Check aria-hidden="true" /><span>{text.noOrders}</span></div>}
         </div>
       </div>)}
-      {!activeCount && <div className="staff-board-empty"><PackageCheck aria-hidden="true" /><h2>{text.quietBoard}</h2><p>{text.quietBoardBody}</p></div>}
     </section>
 
     {showSoundPrompt && !audioEnabled && <div className="staff-dialog-layer" role="presentation">
@@ -550,6 +571,21 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     </div>}
 
     {selectedPreparation && <PreparationDialog value={selectedPreparation} locale={locale} onClose={() => setSelectedPreparation(null)} />}
+    {cancellingOrder && <div className="staff-dialog-layer" role="presentation" onMouseDown={event => event.target === event.currentTarget && !pendingOrderId && setCancellingOrder(null)}>
+      <section className="staff-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-order-title">
+        <button className="staff-dialog-close" disabled={Boolean(pendingOrderId)} onClick={() => setCancellingOrder(null)} aria-label={text.close}><X /></button>
+        <span className="staff-dialog-symbol staff-cancel-symbol"><CircleX aria-hidden="true" /></span>
+        <h2 id="cancel-order-title">{text.cancelTitle}</h2>
+        <p><strong>#{cancellingOrder.orderNumber || cancellingOrder.id.slice(0, 8).toUpperCase()}</strong><br />{text.cancelBody}</p>
+        {cancelError && <div className="staff-dialog-error" role="alert"><AlertTriangle aria-hidden="true" /><span>{cancelError}</span></div>}
+        <div className="staff-dialog-actions">
+          <button className="staff-secondary-button" disabled={Boolean(pendingOrderId)} onClick={() => setCancellingOrder(null)}>{text.keepOrder}</button>
+          <button className="staff-danger-button" disabled={Boolean(pendingOrderId)} onClick={() => void cancelNewOrder()}>
+            {pendingOrderId ? <RefreshCw className="staff-spin" aria-hidden="true" /> : <CircleX aria-hidden="true" />}{pendingOrderId ? text.cancelling : text.confirmCancel}
+          </button>
+        </div>
+      </section>
+    </div>}
     {showEndConfirmation && <div className="staff-dialog-layer" role="presentation" onMouseDown={event => event.target === event.currentTarget && setShowEndConfirmation(false)}>
       <section className="staff-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="end-shift-title">
         <button ref={endDialogClose} className="staff-dialog-close" onClick={() => setShowEndConfirmation(false)} aria-label={text.close}><X /></button>
@@ -577,7 +613,7 @@ function ErrorMessage({ message, onRetry, label }: { message: string; onRetry: (
   return <div className="staff-error" role="alert"><AlertTriangle aria-hidden="true" /><span>{message}</span><button onClick={onRetry}><RefreshCw aria-hidden="true" />{label}</button></div>;
 }
 
-function OrderCard({ order, stage, locale, now, isNew, busy, onAdvance, onPreparation }: {
+function OrderCard({ order, stage, locale, now, isNew, busy, onAdvance, onCancel, onPreparation }: {
   order: StaffBoardOrder & Order;
   stage: BoardStage;
   locale: Locale;
@@ -585,6 +621,7 @@ function OrderCard({ order, stage, locale, now, isNew, busy, onAdvance, onPrepar
   isNew: boolean;
   busy: boolean;
   onAdvance: () => void;
+  onCancel?: () => void;
   onPreparation: (value: SelectedPreparation) => void;
 }) {
   const text = words[locale];
@@ -615,9 +652,12 @@ function OrderCard({ order, stage, locale, now, isNew, busy, onAdvance, onPrepar
     </div>
     <footer>
       <span className={`staff-state-pill staff-state-${stage}`}>{statusLabel(stage, locale)}</span>
-      <button className="staff-order-action" disabled={busy} onClick={onAdvance}>
-        {busy ? <RefreshCw className="staff-spin" aria-hidden="true" /> : <ActionIcon aria-hidden="true" />}{action.label}
-      </button>
+      <div className="staff-order-actions">
+        {onCancel && <button className="staff-order-cancel" disabled={busy} onClick={onCancel} aria-label={text.cancelOrder} title={text.cancelOrder}><CircleX aria-hidden="true" /></button>}
+        <button className="staff-order-action" disabled={busy} onClick={onAdvance}>
+          {busy ? <RefreshCw className="staff-spin" aria-hidden="true" /> : <ActionIcon aria-hidden="true" />}{action.label}
+        </button>
+      </div>
     </footer>
   </article>;
 }
