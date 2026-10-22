@@ -12,28 +12,33 @@ import {
   CalendarClock,
   ChefHat,
   Check,
-  ChevronRight,
+  ClipboardList,
   CircleUserRound,
   Download,
   FileSpreadsheet,
   GripVertical,
   Image,
   LayoutGrid,
+  LayoutDashboard,
   List,
   LogIn,
   LogOut,
+  Menu,
   MessageCircle,
   Minus,
+  Monitor,
+  MoreHorizontal,
   Palette,
+  PackageOpen,
   PhoneCall,
   Plus,
   QrCode,
   Search,
   Save,
-  Settings,
   ShoppingBag,
   Trash2,
   UsersRound,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { categories as seedCategories, defaultTheme, initialOrders, menuItems as seedItems, openingHours as seedHours, users as seedUsers } from './data';
@@ -1456,7 +1461,8 @@ function Dashboard(props: {
   const revenue = todaysOrders.reduce((sum, order) => sum + order.total, 0);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
   useEffect(() => {
     QRCode.toDataURL(props.theme.menuUrl, { width: 220, margin: 2, color: { dark: '#1d1a2e', light: '#ffffff' } }).then(setQrDataUrl);
@@ -1472,15 +1478,26 @@ function Dashboard(props: {
     }
   }, [activeSection, props.mode]);
 
+  useEffect(() => {
+    if (!sidebarExpanded && !mobileMoreOpen) return;
+    const closeNavigation = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSidebarExpanded(false);
+      setMobileMoreOpen(false);
+    };
+    window.addEventListener('keydown', closeNavigation);
+    return () => window.removeEventListener('keydown', closeNavigation);
+  }, [mobileMoreOpen, sidebarExpanded]);
+
   const sidebarItems: Array<{ id: DashboardSection; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: t(props.locale, 'dashboard'), icon: Settings },
-    { id: 'pos', label: props.locale === 'de' ? 'Kasse / POS' : 'Point of sale', icon: ShoppingBag },
-    { id: 'items', label: t(props.locale, 'manageItems'), icon: ShoppingBag },
+    { id: 'overview', label: t(props.locale, 'dashboard'), icon: LayoutDashboard },
+    { id: 'pos', label: props.locale === 'de' ? 'Kasse / POS' : 'Point of sale', icon: Monitor },
+    { id: 'items', label: t(props.locale, 'manageItems'), icon: PackageOpen },
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
     { id: 'hours', label: t(props.locale, 'hours'), icon: CalendarClock },
-    { id: 'orders', label: t(props.locale, 'orders'), icon: BadgeDollarSign },
+    { id: 'orders', label: t(props.locale, 'orders'), icon: ClipboardList },
     { id: 'staff', label: props.locale === 'de' ? 'Team & Schichten' : 'Staff & shifts', icon: ChefHat },
   ];
 
@@ -1617,38 +1634,60 @@ function Dashboard(props: {
   };
 
   const activeLabel = sidebarItems.find((item) => item.id === activeSection)?.label || t(props.locale, 'dashboard');
+  const mobilePrimarySections: DashboardSection[] = ['overview', 'items', 'categories', 'orders'];
+  const mobilePrimaryItems = sidebarItems.filter((item) => mobilePrimarySections.includes(item.id));
+  const mobileMoreItems = sidebarItems.filter((item) => !mobilePrimarySections.includes(item.id));
 
   const selectDashboardSection = (id: DashboardSection) => {
     setActiveSection(id);
-    setMobileMenuOpen(false);
+    setSidebarExpanded(false);
+    setMobileMoreOpen(false);
   };
 
   return (
-    <main className={`dashboard-shell ${mobileMenuOpen ? 'sidebar-open' : ''}`}>
-      <button
-        type="button"
-        className={`dashboard-menu-toggle ${mobileMenuOpen ? 'open' : ''}`}
-        onClick={() => setMobileMenuOpen((current) => !current)}
-        aria-label={mobileMenuOpen ? t(props.locale, 'close') : t(props.locale, 'menu')}
-      >
-        <ChevronRight size={20} />
-      </button>
-      {mobileMenuOpen && <button type="button" className="dashboard-sidebar-scrim" onClick={() => setMobileMenuOpen(false)} aria-label={t(props.locale, 'close')} />}
-      <aside className={`dashboard-sidebar ${mobileMenuOpen ? 'open' : ''}`}>
-        <div className="owner-card">
-          <BrandMark theme={props.theme} />
-          <div>
-            <strong>{props.mode === 'admin' ? t(props.locale, 'adminWorkspace') : t(props.locale, 'ownerWorkspace')}</strong>
-            <small>{props.theme.siteName}</small>
+    <main className={`dashboard-shell ${sidebarExpanded ? 'sidebar-expanded' : ''} ${mobileMoreOpen ? 'mobile-more-expanded' : ''}`}>
+      <button type="button" className={`dashboard-sidebar-scrim ${sidebarExpanded ? 'visible' : ''}`} onClick={() => setSidebarExpanded(false)} aria-label={t(props.locale, 'close')} aria-hidden={!sidebarExpanded} tabIndex={sidebarExpanded ? 0 : -1} />
+      <aside className={`dashboard-sidebar ${sidebarExpanded ? 'open' : ''}`} aria-label={t(props.locale, 'menu')}>
+        <div className="dashboard-sidebar-head">
+          <div className="owner-card">
+            <BrandMark theme={props.theme} />
+            <div>
+              <strong>{props.mode === 'admin' ? t(props.locale, 'adminWorkspace') : t(props.locale, 'ownerWorkspace')}</strong>
+              <small>{props.theme.siteName}</small>
+            </div>
           </div>
+          <button type="button" className="dashboard-sidebar-toggle" onClick={() => setSidebarExpanded((current) => !current)} aria-label={sidebarExpanded ? t(props.locale, 'close') : t(props.locale, 'menu')} aria-expanded={sidebarExpanded}>
+            {sidebarExpanded ? <X size={19} /> : <Menu size={19} />}
+          </button>
         </div>
         {sidebarItems.map(({ id, label, icon: Icon }) => (
-          <button key={id} className={activeSection === id ? 'active' : ''} onClick={() => selectDashboardSection(id)}>
+          <button key={id} className={activeSection === id ? 'active' : ''} onClick={() => selectDashboardSection(id)} aria-label={label} title={sidebarExpanded ? undefined : label}>
             <Icon size={18} />
-            {label}
+            <span>{label}</span>
           </button>
         ))}
       </aside>
+
+      <nav className={`dashboard-mobile-nav ${mobileMoreOpen ? 'more-open' : ''}`} aria-label={t(props.locale, 'menu')}>
+        {!mobileMoreOpen ? <div className="dashboard-mobile-primary">
+          {mobilePrimaryItems.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeSection === id ? 'active' : ''} onClick={() => selectDashboardSection(id)}>
+            <Icon aria-hidden="true" /><span>{label}</span>
+          </button>)}
+          <button type="button" className="dashboard-mobile-more" onClick={() => setMobileMoreOpen(true)} aria-expanded="false">
+            <MoreHorizontal aria-hidden="true" /><span>{props.locale === 'de' ? 'Mehr' : 'More'}</span>
+          </button>
+        </div> : <div className="dashboard-mobile-more-panel">
+          <div className="dashboard-mobile-more-head"><div><strong>{props.locale === 'de' ? 'Weitere Bereiche' : 'More sections'}</strong><small>{activeLabel}</small></div></div>
+          <div className="dashboard-mobile-more-grid">
+            {mobileMoreItems.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeSection === id ? 'active' : ''} onClick={() => selectDashboardSection(id)}>
+              <Icon aria-hidden="true" /><span>{label}</span>
+            </button>)}
+            <button type="button" className="dashboard-mobile-more-close" onClick={() => setMobileMoreOpen(false)} aria-label={t(props.locale, 'close')}>
+              <X aria-hidden="true" /><span>{t(props.locale, 'close')}</span>
+            </button>
+          </div>
+        </div>}
+      </nav>
 
       <section className="dashboard-main">
         <div className="dashboard-topbar animated-panel">
