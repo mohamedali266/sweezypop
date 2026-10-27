@@ -77,6 +77,19 @@ export interface StaffDirectoryEntry {
   recentShifts: StaffShift[];
 }
 
+export interface StaffGuide {
+  id: string;
+  restaurantId: string;
+  menuItemId?: string;
+  name: Record<Locale, string>;
+  ingredients: Record<Locale, string[]>;
+  steps: Record<Locale, string[]>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type StaffGuideInput = Pick<StaffGuide, 'menuItemId' | 'name' | 'ingredients' | 'steps'>;
+
 export interface SocialLink {
   id: string;
   platform?: string;

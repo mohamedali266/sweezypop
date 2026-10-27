@@ -142,8 +142,42 @@
 .staff-gate-actions { display: grid; gap: 10px; }
 
 .staff-active { height: 100dvh; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); overflow: hidden; }
+.staff-active.staff-view-guide { grid-template-rows: auto auto minmax(0, 1fr); }
+.staff-active.staff-view-guide > .sgl { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .staff-topbar { padding: 10px clamp(14px, 2.2vw, 30px); gap: 22px; border-width: 0 0 1px; }
 .staff-topbar .staff-brand { margin-right: auto; max-width: 240px; }
+.staff-workspace-switcher {
+  width: fit-content;
+  margin: 14px clamp(16px, 2.2vw, 30px) 0;
+  padding: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 4px;
+  border: 1px solid var(--staff-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--staff-surface), transparent 8%);
+}
+.staff-workspace-switcher button {
+  min-height: 44px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--staff-muted);
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+.staff-workspace-switcher button.active {
+  color: #fff;
+  background: var(--staff-primary);
+  box-shadow: 0 6px 16px rgba(36, 27, 56, 0.14);
+}
+.staff-workspace-switcher button:focus-visible { outline: 3px solid color-mix(in srgb, var(--staff-lavender), transparent 55%); outline-offset: 2px; }
 
 .staff-connection, .staff-shift-clock {
   min-height: 44px;
@@ -317,6 +351,7 @@
   .staff-summary-stats svg { margin: 0; }
   .staff-summary-stats strong { margin: 0; }
   .staff-active { height: 100dvh; grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  .staff-active.staff-view-guide { grid-template-rows: auto auto minmax(0, 1fr); }
   .staff-topbar { min-height: 64px; padding: 8px 10px; gap: 8px; }
   .staff-topbar .staff-brand { max-width: 104px; }
   .staff-brand img, .staff-brand > span { width: 38px; height: 38px; }
@@ -327,6 +362,11 @@
   .staff-end-button { width: 44px; padding: 0; font-size: 0; }
   .staff-end-button svg { display: block; }
   .staff-topbar-actions { gap: 5px; }
+  .staff-workspace-switcher {
+    width: calc(100% - 28px);
+    margin: 10px 14px 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .staff-language-button { min-width: 44px; padding: 0 8px; }
   .staff-board-heading { align-items: center; padding: 15px 14px 11px; }
   .staff-board-heading .staff-eyebrow, .staff-board-heading p:last-child { display: none; }

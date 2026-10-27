@@ -135,12 +135,39 @@ create table if not exists staff_shifts (
   )
 );
 
+create table if not exists staff_guides (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id text not null references restaurants(id) on delete cascade,
+  menu_item_id text references menu_items(id) on delete set null,
+  name_en text not null,
+  name_de text not null,
+  ingredients_en text[] not null default '{}',
+  ingredients_de text[] not null default '{}',
+  steps_en text[] not null default '{}',
+  steps_de text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  constraint staff_guides_name_en_length check (char_length(btrim(name_en)) between 1 and 160),
+  constraint staff_guides_name_de_length check (char_length(btrim(name_de)) between 1 and 160),
+  constraint staff_guides_ingredients_en_count check (cardinality(ingredients_en) between 1 and 100),
+  constraint staff_guides_ingredients_de_count check (cardinality(ingredients_de) between 1 and 100),
+  constraint staff_guides_steps_en_count check (cardinality(steps_en) between 1 and 100),
+  constraint staff_guides_steps_de_count check (cardinality(steps_de) between 1 and 100),
+  constraint staff_guides_ingredients_en_size check (char_length(array_to_string(ingredients_en, '')) <= 10000),
+  constraint staff_guides_ingredients_de_size check (char_length(array_to_string(ingredients_de, '')) <= 10000),
+  constraint staff_guides_steps_en_size check (char_length(array_to_string(steps_en, '')) <= 20000),
+  constraint staff_guides_steps_de_size check (char_length(array_to_string(steps_de, '')) <= 20000)
+);
+
 create index if not exists idx_categories_restaurant on categories(restaurant_id, sort_order);
 create index if not exists idx_menu_items_restaurant on menu_items(restaurant_id, sort_order);
 create index if not exists idx_orders_restaurant on orders(restaurant_id, created_at desc);
 create unique index if not exists orders_number_unique on orders(order_number);
 create unique index if not exists orders_request_unique on orders(restaurant_id, request_key);
 create index if not exists idx_profiles_auth_user on profiles(auth_user_id);
+create unique index if not exists staff_guides_linked_item_unique on staff_guides(restaurant_id, menu_item_id) where menu_item_id is not null and deleted_at is null;
+create index if not exists staff_guides_restaurant_updated on staff_guides(restaurant_id, updated_at desc);
 
 alter table restaurants enable row level security;
 alter table profiles enable row level security;
@@ -148,6 +175,7 @@ alter table categories enable row level security;
 alter table menu_items enable row level security;
 alter table opening_hours enable row level security;
 alter table orders enable row level security;
+alter table staff_guides enable row level security;
 alter table order_lines enable row level security;
 
 create or replace function current_profile_role()

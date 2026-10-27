@@ -1,4 +1,4 @@
-import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffShift, ThemeSettings } from './types';
+import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -611,6 +611,75 @@ export async function updateStaffMember(profileId: string, name: string, active:
     p_name:name,
     p_active:active,
     p_station:station,
+  });
+  if (error) throw error;
+}
+
+function staffGuideFromRow(value: Record<string, unknown>): StaffGuide {
+  return {
+    id: String(value.id),
+    restaurantId: String(value.restaurant_id),
+    menuItemId: value.menu_item_id ? String(value.menu_item_id) : undefined,
+    name: { en: String(value.name_en || ''), de: String(value.name_de || '') },
+    ingredients: {
+      en: Array.isArray(value.ingredients_en) ? value.ingredients_en.map(String) : [],
+      de: Array.isArray(value.ingredients_de) ? value.ingredients_de.map(String) : [],
+    },
+    steps: {
+      en: Array.isArray(value.steps_en) ? value.steps_en.map(String) : [],
+      de: Array.isArray(value.steps_de) ? value.steps_de.map(String) : [],
+    },
+    createdAt: String(value.created_at || ''),
+    updatedAt: String(value.updated_at || ''),
+  };
+}
+
+function staffGuidePayload(input: StaffGuideInput) {
+  return {
+    p_menu_item_id: input.menuItemId || null,
+    p_name_en: input.name.en.trim(),
+    p_name_de: input.name.de.trim(),
+    p_ingredients_en: input.ingredients.en.map(value => value.trim()).filter(Boolean),
+    p_ingredients_de: input.ingredients.de.map(value => value.trim()).filter(Boolean),
+    p_steps_en: input.steps.en.map(value => value.trim()).filter(Boolean),
+    p_steps_de: input.steps.de.map(value => value.trim()).filter(Boolean),
+  };
+}
+
+export async function loadStaffGuides(): Promise<StaffGuide[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_staff_guides');
+  if (error) throw error;
+  return ((data || []) as Array<Record<string, unknown>>).map(staffGuideFromRow);
+}
+
+export async function createStaffGuide(input: StaffGuideInput): Promise<StaffGuide> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('save_staff_guide', {
+    p_id: null,
+    ...staffGuidePayload(input),
+    p_expected_updated_at: null,
+  });
+  if (error) throw error;
+  return staffGuideFromRow(data as Record<string, unknown>);
+}
+
+export async function updateStaffGuide(guide: StaffGuide, input: StaffGuideInput): Promise<StaffGuide> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('save_staff_guide', {
+    p_id: guide.id,
+    ...staffGuidePayload(input),
+    p_expected_updated_at: guide.updatedAt,
+  });
+  if (error) throw error;
+  return staffGuideFromRow(data as Record<string, unknown>);
+}
+
+export async function deleteStaffGuide(guide: StaffGuide): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('delete_staff_guide', {
+    p_id: guide.id,
+    p_expected_updated_at: guide.updatedAt,
   });
   if (error) throw error;
 }

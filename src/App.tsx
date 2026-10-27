@@ -5,10 +5,12 @@ import JSZip from 'jszip';
 import { PointOfSale, OrderReceipt } from './PointOfSale';
 import { OrdersWorkspace } from './OrdersWorkspace';
 import { StaffManagement } from './StaffManagement';
+import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
+  BookOpenText,
   CalendarClock,
   ChefHat,
   Check,
@@ -61,7 +63,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'password-change';
-type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'staff' | 'users';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -1498,6 +1500,7 @@ function Dashboard(props: {
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
     { id: 'hours', label: t(props.locale, 'hours'), icon: CalendarClock },
     { id: 'orders', label: t(props.locale, 'orders'), icon: ClipboardList },
+    { id: 'staff-guide', label: props.locale === 'de' ? 'Mitarbeiterleitfaden' : 'Staff guide', icon: BookOpenText },
     { id: 'staff', label: props.locale === 'de' ? 'Team & Schichten' : 'Staff & shifts', icon: ChefHat },
   ];
 
@@ -1828,6 +1831,12 @@ function Dashboard(props: {
           {activeSection === 'staff' && (
             <section className="dashboard-card focus-card" id="staff-management">
               <StaffManagement locale={props.locale} isAdmin={props.mode === 'admin'} />
+            </section>
+          )}
+
+          {activeSection === 'staff-guide' && (
+            <section className="dashboard-card focus-card" id="staff-guide-management">
+              <StaffGuideManagement locale={props.locale} items={props.items.filter(item => !isOfferItem(item))} />
             </section>
           )}
 

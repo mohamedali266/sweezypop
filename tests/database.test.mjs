@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -162,4 +162,37 @@ test('POS drafts are isolated to authenticated restaurant managers',async () => 
   assert.equal((await db.query('select jsonb_array_length(list_pos_drafts()) n')).rows[0].n,0);
   await db.query("select set_config('test.uid','',false)");
   await assert.rejects(db.query('select list_pos_drafts()'),/Access denied/);
+});
+
+test('staff guides are manager-controlled, shift-gated and optimistic',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  const created=(await db.query(
+    "select save_staff_guide(null,'drink','Drink','Getränk',$1,$2,$3,$4,null) result",
+    [['Milk'],['Milch'],['Mix'],['Mischen']],
+  )).rows[0].result;
+  assert.equal(created.menu_item_id,'drink');
+  assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,1);
+
+  const updated=(await db.query(
+    "select save_staff_guide($1,'drink','Cold drink','Kaltes Getränk',$2,$3,$4,$5,$6) result",
+    [created.id,['Milk'],['Milch'],['Mix cold'],['Kalt mischen'],created.updated_at],
+  )).rows[0].result;
+  await assert.rejects(
+    db.query("select save_staff_guide($1,'drink','Stale','Veraltet',$2,$3,$4,$5,$6)",[created.id,['Milk'],['Milch'],['Mix'],['Mischen'],created.updated_at]),
+    /Guide changed/,
+  );
+
+  await db.query("select set_config('test.uid',$1,false)",[staff]);
+  await assert.rejects(db.query('select get_staff_guides()'),/Active shift required/);
+  await db.query('select start_staff_shift()');
+  assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,1);
+  await assert.rejects(
+    db.query("select save_staff_guide(null,null,'Bad','Nicht erlaubt',$1,$2,$3,$4,null)",[['x'],['x'],['x'],['x']]),
+    /Access denied/,
+  );
+  await db.query('select end_staff_shift()');
+
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  await db.query('select delete_staff_guide($1,$2)',[updated.id,updated.updated_at]);
+  assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,0);
 });

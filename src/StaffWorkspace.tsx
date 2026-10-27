@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  BookOpenText,
   Check,
   ChefHat,
   CircleDot,
   CircleX,
+  ClipboardList,
   Clock3,
   LogOut,
   Monitor,
@@ -20,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Locale, Order, OrderStatus, StaffBoardOrder, StaffShift } from './types';
+import { StaffGuideLibrary } from './StaffGuideLibrary';
 import {
   endStaffShift,
   loadCurrentStaffShift,
@@ -41,6 +44,7 @@ interface StaffWorkspaceProps {
 }
 type BoardStage = 'new' | 'preparing' | 'ready';
 type ConnectionState = 'live' | 'reconnecting' | 'offline';
+type WorkspaceView = 'orders' | 'guide';
 
 type Preparation = {
   station?: string;
@@ -81,6 +85,7 @@ const words = {
     enableSound: 'Ton aktivieren', enablingSound: 'Wird aktiviert …', soundFailed: 'Ton konnte nicht aktiviert werden. Bitte erneut versuchen.',
     soundPromptTitle: 'Bestellton aktivieren', soundPromptBody: 'Aktiviere den Ton, damit du neue Bestellungen auch bei voller Küche sofort bemerkst.', notNow: 'Nicht jetzt', source: 'Quelle',
     cancelOrder: 'Stornieren', cancelling: 'Wird storniert …', cancelTitle: 'Bestellung stornieren?', cancelBody: 'Diese Bestellung wird aus dem aktiven Arbeitsbereich entfernt und als storniert gespeichert.', keepOrder: 'Bestellung behalten', confirmCancel: 'Ja, stornieren', cancelFailed: 'Die Bestellung konnte nicht storniert werden. Bitte erneut versuchen.',
+    guide: 'Mitarbeiterleitfaden', switchView: 'Arbeitsbereich wechseln',
   },
   en: {
     workspace: 'Staff workspace', startTitle: 'Ready for service?', startBody: 'Start your shift to receive new orders live.',
@@ -102,6 +107,7 @@ const words = {
     enableSound: 'Enable sound', enablingSound: 'Enabling …', soundFailed: 'Sound could not be enabled. Please try again.',
     soundPromptTitle: 'Enable order sound', soundPromptBody: 'Enable sound so every new order is noticed immediately, even during a busy service.', notNow: 'Not now', source: 'Source',
     cancelOrder: 'Cancel order', cancelling: 'Cancelling …', cancelTitle: 'Cancel this order?', cancelBody: 'This order will leave the active workspace and remain recorded as cancelled.', keepOrder: 'Keep order', confirmCancel: 'Yes, cancel', cancelFailed: 'The order could not be cancelled. Please try again.',
+    guide: 'Staff guide', switchView: 'Switch workspace',
   },
 } as const;
 
@@ -212,6 +218,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const [error, setError] = useState('');
   const [connection, setConnection] = useState<ConnectionState>(navigator.onLine ? 'reconnecting' : 'offline');
   const [activeMobileStatus, setActiveMobileStatus] = useState<BoardStage>('new');
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<WorkspaceView>('orders');
   const [pendingOrderId, setPendingOrderId] = useState('');
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
   const [selectedPreparation, setSelectedPreparation] = useState<SelectedPreparation | null>(null);
@@ -398,6 +405,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
       const ended = validDate(endedShift.endedAt)?.getTime() ?? Date.now();
       setSummary({ duration: Math.max(0, ended - started), handled: endedShift.ordersHandled });
       setShift(null);
+      setActiveWorkspaceView('orders');
       setOrders([]);
       setAudioEnabled(false);
       setSoundError('');
@@ -500,7 +508,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
 
   const activeCount = boardStages.reduce((count, stage) => count + groupedOrders[stage].length, 0);
 
-  return <main className="staff-workspace staff-active" lang={locale}>
+  return <main className={`staff-workspace staff-active staff-view-${activeWorkspaceView}`} lang={locale}>
     <header className="staff-topbar">
       <Brand siteName={siteName} logoUrl={logoUrl} />
       <div className={`staff-connection staff-connection-${connection}`} aria-live="polite">
@@ -515,7 +523,17 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
       </div>
     </header>
 
-    <section className="staff-board-heading">
+    <nav className="staff-workspace-switcher" aria-label={text.switchView}>
+      <button type="button" className={activeWorkspaceView === 'orders' ? 'active' : ''} aria-pressed={activeWorkspaceView === 'orders'} onClick={() => setActiveWorkspaceView('orders')}>
+        <ClipboardList aria-hidden="true" /><span>{text.board}</span>
+      </button>
+      <button type="button" className={activeWorkspaceView === 'guide' ? 'active' : ''} aria-pressed={activeWorkspaceView === 'guide'} onClick={() => setActiveWorkspaceView('guide')}>
+        <BookOpenText aria-hidden="true" /><span>{text.guide}</span>
+      </button>
+    </nav>
+
+    {activeWorkspaceView === 'orders' ? <>
+      <section className="staff-board-heading">
       <div><p className="staff-eyebrow">{text.workspace}</p><h1>{text.board}</h1><p>{text.boardHint}</p></div>
       <div className="staff-board-heading-actions">
         {!audioEnabled && <button className="staff-sound-button" disabled={audioEnabling} onClick={() => void enableShiftAudio()}>
@@ -524,17 +542,17 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
         </button>}
         <div className="staff-board-total"><strong>{activeCount}</strong><span>{activeCount === 1 ? text.item : text.items}</span></div>
       </div>
-    </section>
+      </section>
 
-    {error && <ErrorMessage message={error} onRetry={() => void refreshBoard()} label={text.retry} />}
+      {error && <ErrorMessage message={error} onRetry={() => void refreshBoard()} label={text.retry} />}
 
-    <nav className="staff-mobile-statuses" aria-label={text.board}>
+      <nav className="staff-mobile-statuses" aria-label={text.board}>
       {boardStages.map(stage => <button key={stage} aria-pressed={activeMobileStatus === stage} onClick={() => setActiveMobileStatus(stage)}>
         <span>{statusLabel(stage, locale)}</span><strong>{groupedOrders[stage].length}</strong>
       </button>)}
-    </nav>
+      </nav>
 
-    <section className="staff-board" aria-live="polite">
+      <section className="staff-board" aria-live="polite">
       {boardStages.map(stage => <div key={stage} className={`staff-column staff-column-${stage} ${activeMobileStatus === stage ? 'is-mobile-active' : ''}`}>
         <header><div><span className="staff-status-dot" /><h2>{statusLabel(stage, locale)}</h2></div><strong>{groupedOrders[stage].length}</strong></header>
         <div className="staff-column-scroll">
@@ -552,7 +570,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
           />) : <div className="staff-column-empty"><Check aria-hidden="true" /><span>{text.noOrders}</span></div>}
         </div>
       </div>)}
-    </section>
+      </section>
+    </> : <StaffGuideLibrary locale={locale} />}
 
     {showSoundPrompt && !audioEnabled && <div className="staff-dialog-layer" role="presentation">
       <section className="staff-sound-dialog" role="dialog" aria-modal="true" aria-labelledby="sound-prompt-title">

@@ -1412,7 +1412,7 @@ button {
   gap: 10px;
   align-items: center;
   width: 54px;
-  height: clamp(32px, calc((100dvh - 197px) / 10), 44px);
+  height: clamp(28px, calc((100dvh - 200px) / 11), 44px);
   min-height: 0;
   padding: 0 16px;
   border: 1px solid transparent;
