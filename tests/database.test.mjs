@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -72,6 +72,30 @@ test('customer receipt confirmation is capability-protected, ready-only and stor
   assert.equal(completed.status,'done');
   assert.deepEqual((await db.query('select rating,feedback from order_feedback where order_id=$1',[order.id])).rows[0],{rating:5,feedback:'Great service'});
   assert.equal((await db.query("select count(*)::int n from order_events where order_id=$1 and previous_status='ready' and next_status='done'",[order.id])).rows[0].n,1);
+});
+test('review moderation is manager controlled and footer content is admin only',async () => {
+  const feedback=(await db.query("select id from order_feedback where feedback='Great service'")).rows[0];
+  await db.query("select set_config('test.uid',$1,false)",[owner]);
+  await db.query('select set_review_visibility($1,true)',[feedback.id]);
+  await db.query('select set_reviews_section_visibility(true)');
+  const ownerView=(await db.query('select get_review_management() result')).rows[0].result;
+  assert.equal(ownerView.reviews.find(review=>review.id===feedback.id).visible,true);
+  await assert.rejects(db.query("select save_footer_content('Owner edit','Owner edit')"),/Access denied/);
+  await db.exec("update profiles set must_change_password=true where id='owner'");
+  await assert.rejects(db.query('select get_review_management()'),/Access denied/);
+  await db.exec("update profiles set must_change_password=false where id='owner'");
+
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  await db.query("select save_footer_content('© 2026 Test. All rights reserved.','© 2026 Test. Alle Rechte vorbehalten.')");
+  const adminView=(await db.query('select get_review_management() result')).rows[0].result;
+  assert.equal(adminView.footer_copyright_en,'© 2026 Test. All rights reserved.');
+
+  await db.query("select set_config('test.uid','',false)");
+  const publicReviews=(await db.query("select get_public_reviews('sweezypop',16) result")).rows[0].result;
+  assert.equal(publicReviews.length,1);
+  assert.equal(publicReviews[0].display_name,'Anna');
+  assert.equal(publicReviews[0].feedback,'Great service');
+  await db.query("select set_config('test.uid','',false)");
 });
 test('invalid line rolls back the entire order',async () => {
   const before=(await db.query('select count(*)::int as n from orders')).rows[0].n;

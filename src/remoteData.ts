@@ -1,4 +1,4 @@
-import type { AppUser, Category, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, Category, CustomerReview, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -73,6 +73,12 @@ type DbRestaurant = {
   phone_number?: string | null;
 };
 
+type DbContentSettings = {
+  reviews_visible?: boolean | null;
+  footer_copyright_en?: string | null;
+  footer_copyright_de?: string | null;
+};
+
 function appId(prefix: string, id: string) {
   return `${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)}`;
 }
@@ -113,7 +119,7 @@ function normalizeSocialLinks(value: unknown, fallback: SocialLink[]) {
     .filter((link): link is SocialLink => Boolean(link && link.label));
 }
 
-function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): ThemeSettings {
+function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings, content?: DbContentSettings | null): ThemeSettings {
   return {
     ...fallback,
     siteName: restaurant.name || fallback.siteName,
@@ -133,6 +139,11 @@ function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings): T
     socialLinks: normalizeSocialLinks(restaurant.social_links, fallback.socialLinks || []),
     phoneCountryCode: restaurant.phone_country_code || fallback.phoneCountryCode || '+49',
     phoneNumber: restaurant.phone_number || fallback.phoneNumber || '',
+    reviewsVisible: content?.reviews_visible !== false,
+    footerCopyright: {
+      en: content?.footer_copyright_en || fallback.footerCopyright.en,
+      de: content?.footer_copyright_de || fallback.footerCopyright.de,
+    },
   };
 }
 
@@ -193,21 +204,80 @@ export async function saveRemoteSiteSettings(theme: ThemeSettings, layout: MenuL
   await saveOptionalRestaurantSettings(restaurantId, theme, layout);
 }
 
+export async function loadPublicReviews(limit = 16): Promise<CustomerReview[]> {
+  if (!isSupabaseConfigured || !supabase) return [];
+  const { data, error } = await supabase.rpc('get_public_reviews', { p_slug: restaurantSlug, p_limit: limit });
+  if (error) throw error;
+  return ((data || []) as Array<Record<string, unknown>>).map((review) => ({
+    id: String(review.id || ''),
+    displayName: String(review.display_name || ''),
+    rating: Number(review.rating || 0),
+    feedback: String(review.feedback || ''),
+    submittedAt: String(review.submitted_at || ''),
+  })).filter((review) => review.id && review.feedback && review.rating >= 1 && review.rating <= 5);
+}
+
+export async function loadReviewManagement(): Promise<{ reviewsVisible: boolean; footerCopyright: ThemeSettings['footerCopyright']; reviews: ManagedReview[] }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_review_management');
+  if (error) throw error;
+  const result = (data || {}) as Record<string, unknown>;
+  return {
+    reviewsVisible: result.reviews_visible !== false,
+    footerCopyright: {
+      en: String(result.footer_copyright_en || ''),
+      de: String(result.footer_copyright_de || ''),
+    },
+    reviews: (Array.isArray(result.reviews) ? result.reviews : []).map((review: Record<string, unknown>) => ({
+      id: String(review.id || ''),
+      displayName: String(review.customer_name || ''),
+      orderNumber: String(review.order_number || ''),
+      rating: Number(review.rating || 0),
+      feedback: String(review.feedback || ''),
+      submittedAt: String(review.submitted_at || ''),
+      visible: Boolean(review.visible),
+    })),
+  };
+}
+
+export async function saveReviewsSectionVisibility(visible: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('set_reviews_section_visibility', { p_visible: visible });
+  if (error) throw error;
+}
+
+export async function saveReviewVisibility(feedbackId: string, visible: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('set_review_visibility', { p_feedback_id: feedbackId, p_visible: visible });
+  if (error) throw error;
+}
+
+export async function saveFooterContent(copyright: ThemeSettings['footerCopyright']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.rpc('save_footer_content', {
+    p_copyright_en: copyright.en.trim(),
+    p_copyright_de: copyright.de.trim(),
+  });
+  if (error) throw error;
+}
+
 export async function loadRemoteState(fallback: RemoteState): Promise<RemoteState | null> {
   if (!isSupabaseConfigured || !supabase) return null;
 
   const restaurant = await getRestaurant();
   const restaurantId = restaurant.id;
 
-  const [categoriesResult, itemsResult, hoursResult] = await Promise.all([
+  const [categoriesResult, itemsResult, hoursResult, contentResult] = await Promise.all([
     supabase.from('categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
     supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
     supabase.from('opening_hours').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+    supabase.from('restaurant_content_settings').select('reviews_visible,footer_copyright_en,footer_copyright_de').eq('restaurant_id', restaurantId).maybeSingle(),
   ]);
 
   if (categoriesResult.error) throw categoriesResult.error;
   if (itemsResult.error) throw itemsResult.error;
   if (hoursResult.error) throw hoursResult.error;
+  if (contentResult.error) throw contentResult.error;
 
   const categories: Category[] = (categoriesResult.data || []).map((category) => ({
     id: category.id,
@@ -255,7 +325,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       : fallback.hours,
     orders: privateState.orders,
     users: privateState.users,
-    theme: restaurantToTheme(restaurant, fallback.theme),
+    theme: restaurantToTheme(restaurant, fallback.theme, contentResult.data as DbContentSettings | null),
     layout: restaurantToLayout(restaurant, fallback.layout),
   };
 }

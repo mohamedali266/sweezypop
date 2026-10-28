@@ -155,6 +155,11 @@ export const defaultTheme: ThemeSettings = {
   ],
   phoneCountryCode: '+49',
   phoneNumber: '',
+  reviewsVisible: true,
+  footerCopyright: {
+    en: '© 2026 Sweezypop. All rights reserved.',
+    de: '© 2026 Sweezypop. Alle Rechte vorbehalten.',
+  },
 };
 
 export const openingHours: OpeningHour[] = [

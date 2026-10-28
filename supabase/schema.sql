@@ -166,8 +166,19 @@ create table if not exists order_feedback (
   restaurant_id text not null references restaurants(id) on delete cascade,
   rating smallint check (rating between 1 and 5),
   feedback text not null default '',
+  visible boolean not null default false,
   submitted_at timestamptz not null default now(),
   constraint order_feedback_length check (char_length(feedback) <= 1000)
+);
+
+create table if not exists restaurant_content_settings (
+  restaurant_id text primary key references restaurants(id) on delete cascade,
+  reviews_visible boolean not null default true,
+  footer_copyright_en text not null default '© 2026 Sweezypop. All rights reserved.',
+  footer_copyright_de text not null default '© 2026 Sweezypop. Alle Rechte vorbehalten.',
+  updated_at timestamptz not null default now(),
+  constraint footer_copyright_en_length check (char_length(footer_copyright_en) between 1 and 300),
+  constraint footer_copyright_de_length check (char_length(footer_copyright_de) between 1 and 300)
 );
 
 create index if not exists idx_categories_restaurant on categories(restaurant_id, sort_order);
@@ -187,6 +198,7 @@ alter table opening_hours enable row level security;
 alter table orders enable row level security;
 alter table staff_guides enable row level security;
 alter table order_feedback enable row level security;
+alter table restaurant_content_settings enable row level security;
 alter table order_lines enable row level security;
 
 create or replace function current_profile_role()

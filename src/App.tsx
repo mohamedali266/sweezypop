@@ -8,6 +8,7 @@ import { StaffManagement } from './StaffManagement';
 import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
 import { OrderJourney } from './OrderJourney';
+import { MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
@@ -66,7 +67,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'password-change';
-type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -168,6 +169,11 @@ function normalizeThemeSettings(value: unknown): ThemeSettings {
       : defaultTheme.socialLinks,
     phoneCountryCode: theme.phoneCountryCode || defaultTheme.phoneCountryCode,
     phoneNumber: theme.phoneNumber || '',
+    reviewsVisible: theme.reviewsVisible !== false,
+    footerCopyright: {
+      en: theme.footerCopyright?.en || defaultTheme.footerCopyright.en,
+      de: theme.footerCopyright?.de || defaultTheme.footerCopyright.de,
+    },
   };
 }
 
@@ -1245,11 +1251,6 @@ function MenuPage(props: {
   return (
     <main className="menu-shell">
       <section className="menu-hero">
-        <div className="hero-media">
-          <div className="plate plate-one" />
-          <div className="plate plate-two" />
-          <div className="plate plate-three" />
-        </div>
         <div className="hero-copy">
           <span className="eyebrow">{today ? `${props.locale === 'de' ? 'Heute' : 'Today'} ${today.open}–${today.close}` : props.locale === 'de' ? 'Heute geschlossen' : 'Closed today'}</span>
           <h1>{props.theme.siteName}</h1>
@@ -1294,6 +1295,8 @@ function MenuPage(props: {
           ))}
         </section>
       </div>
+      <ReviewsShowcase locale={props.locale} visible={props.theme.reviewsVisible} />
+      <MenuFooter locale={props.locale} copyright={props.theme.footerCopyright} />
       <CartPanel
         locale={props.locale}
         cart={props.cart}
@@ -1691,6 +1694,7 @@ function Dashboard(props: {
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
+    { id: 'reviews', label: props.locale === 'de' ? 'Bewertungen & Footer' : 'Reviews & footer', icon: MessageCircle },
     { id: 'hours', label: t(props.locale, 'hours'), icon: CalendarClock },
     { id: 'orders', label: t(props.locale, 'orders'), icon: ClipboardList },
     { id: 'staff-guide', label: props.locale === 'de' ? 'Mitarbeiterleitfaden' : 'Staff guide', icon: BookOpenText },
@@ -1990,6 +1994,15 @@ function Dashboard(props: {
               layout={props.layout}
               setLayout={props.setLayout}
               persistSiteSettings={props.persistSiteSettings}
+            />
+          )}
+
+          {activeSection === 'reviews' && (
+            <ReviewsManager
+              locale={props.locale}
+              isAdmin={props.mode === 'admin'}
+              theme={props.theme}
+              onThemeChange={props.setTheme}
             />
           )}
 

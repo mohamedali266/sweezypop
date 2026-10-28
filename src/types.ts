@@ -129,6 +129,21 @@ export interface ThemeSettings {
   socialLinks: SocialLink[];
   phoneCountryCode: string;
   phoneNumber: string;
+  reviewsVisible: boolean;
+  footerCopyright: Record<Locale, string>;
+}
+
+export interface CustomerReview {
+  id: string;
+  displayName: string;
+  rating: number;
+  feedback: string;
+  submittedAt: string;
+}
+
+export interface ManagedReview extends CustomerReview {
+  orderNumber: string;
+  visible: boolean;
 }
 
 export interface OpeningHour {
