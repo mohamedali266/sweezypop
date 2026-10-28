@@ -5,6 +5,7 @@
   --journey-danger-soft: color-mix(in srgb, var(--primary), var(--surface) 91%);
   --journey-lavender-soft: color-mix(in srgb, var(--lavender), var(--surface) 86%);
   --drag-offset: 0px;
+  --drag-height: auto;
   position: fixed;
   z-index: 36;
   right: 24px;
@@ -59,10 +60,10 @@
 .order-journey__connection-note svg { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 1px; }
 .order-journey__body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 
-.order-journey__scene { aspect-ratio: 2101 / 2244; width: 100%; border-bottom: 1px solid var(--border); background-color: var(--journey-lavender-soft); background-image: url('/order-journey-stages.png'); background-position: left center; background-repeat: no-repeat; background-size: 300% 100%; animation: order-journey-scene 360ms cubic-bezier(.22, 1, .36, 1) both; }
-.order-journey.stage-1 .order-journey__scene { background-position: center center; }
-.order-journey.stage-2 .order-journey__scene { background-position: right center; background-color: var(--journey-success-soft); }
-.order-journey.is-cancelled .order-journey__scene { filter: saturate(.25); }
+.order-journey__scene { display: grid; min-height: 230px; place-items: center; overflow: hidden; border-bottom: 1px solid var(--border); background: var(--surface); animation: order-journey-scene 360ms cubic-bezier(.22, 1, .36, 1) both; }
+.order-journey__scene img { display: block; width: min(64%, 280px); height: auto; object-fit: contain; }
+.order-journey.stage-2 .order-journey__scene { background: var(--journey-success-soft); }
+.order-journey.is-cancelled .order-journey__scene img { filter: grayscale(.7); opacity: .65; }
 .order-journey__progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 18px 18px 15px; list-style: none; }
 .order-journey__progress li { position: relative; display: grid; min-width: 0; justify-items: center; gap: 7px; color: var(--muted); font-size: .7rem; font-weight: 800; text-align: center; }
 .order-journey__progress li:not(:last-child)::after, .order-journey__progress li:not(:last-child)::before { position: absolute; top: 15px; left: calc(50% + 18px); width: calc(100% - 36px); height: 3px; content: ''; }
@@ -123,14 +124,14 @@
 .order-journey__confirmation p { margin: 4px 0 0; color: var(--muted); font-size: .78rem; }
 .order-journey__rating { min-width: 0; margin: 0; border: 0; padding: 0; }
 .order-journey__rating legend, .order-journey__feedback > span { margin-bottom: 7px; color: var(--muted); font-size: .7rem; font-weight: 850; text-transform: uppercase; }
-.order-journey__rating > div { display: grid; grid-template-columns: repeat(5, 44px); gap: 7px; }
-.order-journey__rating label { position: relative; display: block; width: 44px; height: 44px; cursor: pointer; }
+.order-journey__rating > div { display: flex; gap: 9px; align-items: center; }
+.order-journey__rating label { position: relative; display: block; width: 36px; height: 36px; cursor: pointer; }
 .order-journey__rating input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.order-journey__rating label > span { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid color-mix(in srgb, var(--journey-success), transparent 62%); border-radius: 7px; color: var(--muted); background: var(--surface); }
-.order-journey__rating label:hover > span, .order-journey__rating label.is-selected > span { border-color: var(--journey-success); color: #825800; background: color-mix(in srgb, #ffd45a, var(--surface) 72%); }
+.order-journey__rating label > span { display: grid; width: 36px; height: 36px; place-items: center; color: color-mix(in srgb, var(--muted), transparent 20%); transition: color 180ms ease, transform 180ms ease; }
+.order-journey__rating label:hover > span, .order-journey__rating label.is-selected > span { color: #d99a00; transform: scale(1.12); }
 .order-journey__rating label.is-selected svg { fill: currentColor; }
-.order-journey__rating input:focus-visible + span { outline: 3px solid color-mix(in srgb, var(--accent), transparent 55%); outline-offset: 2px; }
-.order-journey__rating svg { width: 21px; }
+.order-journey__rating input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+.order-journey__rating svg { width: 27px; height: 27px; }
 .order-journey__feedback { position: relative; display: grid; }
 .order-journey__feedback textarea { width: 100%; resize: vertical; border: 1px solid color-mix(in srgb, var(--journey-success), transparent 62%); border-radius: 7px; padding: 11px 12px 24px; color: var(--text); background: var(--surface); font: inherit; font-size: .8rem; line-height: 1.45; }
 .order-journey__feedback > small { position: absolute; right: 9px; bottom: 7px; color: var(--muted); font-size: .65rem; }
@@ -158,6 +159,7 @@
   .menu-shell:has(.order-journey.is-collapsed) { padding-bottom: calc(130px + env(safe-area-inset-bottom)); }
   .order-journey { right: 0; bottom: 0; left: 0; width: 100%; }
   .order-journey__panel { max-height: 90dvh; padding-bottom: env(safe-area-inset-bottom); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 8px 8px 0 0; }
+  .order-journey.is-dragging .order-journey__panel { height: var(--drag-height); max-height: 90dvh; animation: none; }
   .order-journey__compact { min-height: calc(84px + env(safe-area-inset-bottom)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 8px 8px 0 0; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .order-journey__drag-handle { display: block; }
   .order-journey__drag-handle .order-journey__grab { margin-bottom: 0; }
@@ -170,8 +172,7 @@
   .order-journey__compact-main { grid-template-columns: 42px minmax(0, 1fr) 20px; }
   .order-journey__compact-main > .order-journey__connection { display: none; }
   .order-journey__progress { padding-inline: 10px; }
-  .order-journey__rating > div { grid-template-columns: repeat(5, minmax(44px, 1fr)); gap: 4px; }
-  .order-journey__rating label, .order-journey__rating label > span { width: 100%; }
+  .order-journey__rating > div { justify-content: space-between; }
 }
 
 @media (prefers-reduced-motion: reduce) {

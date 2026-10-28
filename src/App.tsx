@@ -369,8 +369,13 @@ function AppContent() {
     const completed = await completeTrackedOrder(current, rating, feedback);
     trackedOrderRef.current = completed;
     setTrackedOrder(completed);
+    setOrderJourneyExpanded(true);
     setOrderStatusNotice(locale === 'de' ? 'Danke! Wir freuen uns auf deinen nächsten Besuch.' : 'Thank you! We look forward to seeing you next time.');
-    window.setTimeout(() => setOrderJourneyExpanded(false), 3800);
+    window.setTimeout(() => {
+      trackedOrderRef.current = null;
+      setTrackedOrder(null);
+      setOrderStatusNotice('');
+    }, 3800);
   };
 
   const applyRemoteState = (remoteState: RemoteState) => {

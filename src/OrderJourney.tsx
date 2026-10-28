@@ -64,6 +64,7 @@ const copy = {
 } satisfies Record<Locale, Record<string, string>>;
 
 const stageByStatus: Record<OrderStatus, JourneyStage> = { new: 0, accepted: 0, preparing: 1, ready: 2, done: 2, cancelled: 0 };
+const stageVisuals = ['/order-received.gif', '/order-preparing.gif', '/order-ready.gif'] as const;
 
 function formatMoney(value: number, locale: Locale) {
   return new Intl.NumberFormat(locale === 'de' ? 'de-DE' : 'en-DE', { style: 'currency', currency: 'EUR' }).format(value);
@@ -85,7 +86,8 @@ export function OrderJourney({
   const [feedback, setFeedback] = useState('');
   const [confirmationState, setConfirmationState] = useState<'idle' | 'busy' | 'failed'>('idle');
   const [dragOffset, setDragOffset] = useState(0);
-  const drag = useRef({ pointerId: -1, startY: 0, lastY: 0, lastAt: 0, recentY: 0, recentAt: 0, moved: false });
+  const [dragHeight, setDragHeight] = useState<number | null>(null);
+  const drag = useRef({ pointerId: -1, startY: 0, startHeight: 0, lastY: 0, lastAt: 0, recentY: 0, recentAt: 0, moved: false, mobile: false });
   const suppressClick = useRef(false);
 
   useEffect(() => {
@@ -130,8 +132,13 @@ export function OrderJourney({
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const now = performance.now();
-    drag.current = { pointerId: event.pointerId, startY: event.clientY, lastY: event.clientY, lastAt: now, recentY: event.clientY, recentAt: now, moved: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const mobile = window.matchMedia('(max-width: 600px)').matches;
+    const startHeight = expanded
+      ? Math.min(window.innerHeight * 0.9, 820)
+      : event.currentTarget.getBoundingClientRect().height;
+    drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, lastY: event.clientY, lastAt: now, recentY: event.clientY, recentAt: now, moved: false, mobile };
+    const captureTarget = event.currentTarget.closest('.order-journey');
+    if (captureTarget instanceof HTMLElement) captureTarget.setPointerCapture(event.pointerId);
   };
 
   const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
@@ -145,7 +152,13 @@ export function OrderJourney({
     drag.current.lastY = event.clientY;
     drag.current.lastAt = now;
     drag.current.moved ||= Math.abs(delta) > 6;
-    setDragOffset(expanded ? Math.max(0, delta) : Math.min(0, delta));
+    if (drag.current.mobile) {
+      const minimum = 84 + Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0');
+      const maximum = window.innerHeight * 0.9;
+      setDragHeight(Math.min(maximum, Math.max(minimum, drag.current.startHeight - delta)));
+    } else {
+      setDragOffset(expanded ? Math.max(0, delta) : Math.min(0, delta));
+    }
   };
 
   const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
@@ -155,6 +168,7 @@ export function OrderJourney({
     suppressClick.current = drag.current.moved;
     drag.current.pointerId = -1;
     setDragOffset(0);
+    setDragHeight(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (expanded && (distance > 72 || velocity > 0.55)) onExpandedChange(false);
     if (!expanded && (distance < -36 || velocity < -0.45)) onExpandedChange(true);
@@ -165,6 +179,7 @@ export function OrderJourney({
     suppressClick.current = false;
     drag.current.pointerId = -1;
     setDragOffset(0);
+    setDragHeight(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -180,24 +195,27 @@ export function OrderJourney({
     catch { setConfirmationState('failed'); }
   };
 
-  const gestureProps = {
-    onPointerDown: beginDrag,
+  const gestureStartProps = { onPointerDown: beginDrag };
+  const gestureTrackingProps = {
     onPointerMove: moveDrag,
     onPointerUp: endDrag,
     onPointerCancel: cancelDrag,
     onLostPointerCapture: cancelDrag,
   };
 
+  const showingPanel = expanded || (dragHeight !== null && dragHeight > 96);
+
   return (
     <aside
-      className={`order-journey ${expanded ? 'is-expanded' : 'is-collapsed'} stage-${currentStage} ${cancelled ? 'is-cancelled' : ''} ${done ? 'is-done' : ''} ${dragOffset ? 'is-dragging' : ''}`}
-      style={{ '--drag-offset': `${dragOffset}px` } as CSSProperties}
+      className={`order-journey ${showingPanel ? 'is-expanded' : 'is-collapsed'} stage-${currentStage} ${cancelled ? 'is-cancelled' : ''} ${done ? 'is-done' : ''} ${dragOffset || dragHeight !== null ? 'is-dragging' : ''}`}
+      style={{ '--drag-offset': `${dragOffset}px`, '--drag-height': dragHeight === null ? undefined : `${dragHeight}px` } as CSSProperties}
       aria-label={text.tracker}
+      {...gestureTrackingProps}
     >
       {visibleNotice && <div className="order-journey__toast" role="status" aria-live="polite"><Check aria-hidden="true" /><span>{visibleNotice}</span></div>}
 
-      {!expanded ? (
-        <button type="button" className="order-journey__compact" onClick={handleToggleClick} aria-label={text.expand} title={text.expand} {...gestureProps}>
+      {!showingPanel ? (
+        <button type="button" className="order-journey__compact" onClick={handleToggleClick} aria-label={text.expand} title={text.expand} {...gestureStartProps}>
           <span className="order-journey__grab" aria-hidden="true" />
           <span className="order-journey__compact-main">
             <span className="order-journey__compact-icon">{cancelled ? <CircleAlert aria-hidden="true" /> : currentStage === 2 ? <Check aria-hidden="true" /> : <Clock3 aria-hidden="true" />}</span>
@@ -209,7 +227,7 @@ export function OrderJourney({
         </button>
       ) : (
         <div className="order-journey__panel">
-          <button type="button" className="order-journey__drag-handle" onClick={handleToggleClick} aria-label={text.collapse} title={text.collapse} {...gestureProps}><span className="order-journey__grab" aria-hidden="true" /></button>
+          <button type="button" className="order-journey__drag-handle" onClick={handleToggleClick} aria-label={text.collapse} title={text.collapse} {...gestureStartProps}><span className="order-journey__grab" aria-hidden="true" /></button>
 
           <header className="order-journey__header">
             <div className="order-journey__identity">
@@ -235,7 +253,9 @@ export function OrderJourney({
               </section>
             ) : (
               <>
-                <div className="order-journey__scene" key={order.status} role="img" aria-label={statusContent.label} />
+                <div className="order-journey__scene" key={order.status}>
+                  <img src={stageVisuals[currentStage]} alt={statusContent.label} />
+                </div>
                 <ol className="order-journey__progress" aria-label={text.current}>
                   {stageLabels.map((label, index) => {
                     const Icon = stageIcons[index];
