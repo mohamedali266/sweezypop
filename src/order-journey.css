@@ -145,6 +145,16 @@
 .order-journey__thank-you h2 { margin: 7px 0 5px; font-size: 1.55rem; }
 .order-journey__thank-you p { max-width: 320px; margin: 0; color: color-mix(in srgb, var(--journey-success), var(--text) 35%); font-size: .9rem; line-height: 1.55; }
 
+.order-journey__cancelled { display: grid; min-height: 430px; place-items: center; align-content: center; padding: 46px 24px calc(34px + env(safe-area-inset-bottom)); color: #7a1c17; background: linear-gradient(180deg, #fff7f6 0%, #ffe5e2 100%); text-align: center; animation: order-journey-cancelled 320ms cubic-bezier(.22, 1, .36, 1) both; }
+.order-journey__cancelled-icon { display: grid; width: 82px; height: 82px; margin-bottom: 20px; place-items: center; border-radius: 50%; color: #fff; background: #c52a21; box-shadow: 0 0 0 11px rgb(197 42 33 / 12%); }
+.order-journey__cancelled-icon svg { width: 42px; height: 42px; stroke-width: 2.2; }
+.order-journey__cancelled small { color: #9b3b34; font-size: .75rem; font-weight: 850; text-transform: uppercase; }
+.order-journey__cancelled h2 { margin: 8px 0 7px; color: #7a1c17; font-size: 1.55rem; }
+.order-journey__cancelled p { max-width: 330px; margin: 0; color: #8f3932; font-size: .9rem; line-height: 1.6; }
+.order-journey__cancelled button { min-width: 170px; min-height: 48px; margin-top: 24px; border: 0; border-radius: 7px; padding: 0 22px; color: #fff; background: #a9221a; font: inherit; font-size: .84rem; font-weight: 850; box-shadow: 0 10px 24px rgb(122 28 23 / 20%); }
+.order-journey__cancelled button:hover { background: #8d1b15; }
+.order-journey__cancelled button:focus-visible { outline: 3px solid rgb(197 42 33 / 30%); outline-offset: 3px; }
+
 .order-journey__toast { position: absolute; right: 0; bottom: calc(100% + 10px); display: flex; max-width: min(360px, calc(100vw - 32px)); align-items: center; gap: 9px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--accent), var(--border) 50%); border-radius: 7px; color: var(--text); background: var(--surface); box-shadow: 0 14px 38px color-mix(in srgb, var(--text), transparent 84%); font-size: .8rem; font-weight: 800; animation: order-journey-toast 240ms ease-out both; }
 .order-journey__toast svg { width: 18px; flex: 0 0 18px; color: var(--journey-success); }
 .order-journey__spinner { animation: order-journey-spin 800ms linear infinite; }
@@ -154,6 +164,7 @@
 @keyframes order-journey-toast { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes order-journey-spin { to { transform: rotate(360deg); } }
 @keyframes order-journey-pulse { 50% { opacity: .35; } }
+@keyframes order-journey-cancelled { from { opacity: 0; transform: scale(.97) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
 @media (max-width: 600px) {
   .menu-shell:has(.order-journey.is-collapsed) { padding-bottom: calc(130px + env(safe-area-inset-bottom)); }
@@ -176,5 +187,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .order-journey, .order-journey__panel, .order-journey__scene, .order-journey__toast, .order-journey__connection.is-checking i, .order-journey__spinner, .order-journey__compact-progress i, .order-journey__step-icon, .order-journey__progress li::before { animation: none; transition: none; }
+  .order-journey, .order-journey__panel, .order-journey__scene, .order-journey__cancelled, .order-journey__toast, .order-journey__connection.is-checking i, .order-journey__spinner, .order-journey__compact-progress i, .order-journey__step-icon, .order-journey__progress li::before { animation: none; transition: none; }
 }

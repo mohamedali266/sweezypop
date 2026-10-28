@@ -378,6 +378,13 @@ function AppContent() {
     }, 3800);
   };
 
+  const dismissTrackedOrder = () => {
+    trackedOrderRef.current = null;
+    setTrackedOrder(null);
+    setOrderStatusNotice('');
+    setOrderJourneyExpanded(false);
+  };
+
   const applyRemoteState = (remoteState: RemoteState) => {
     baseline.current = remoteState;
     setCategories(safeArray(remoteState.categories, seedCategories));
@@ -634,7 +641,10 @@ function AppContent() {
         setTrackingConnection('live');
         trackedOrderRef.current = next;
         setTrackedOrder(next);
-        if (previous && customerOrderStage(previous.status) !== customerOrderStage(next.status)) announceOrderStatus(next);
+        if (previous && customerOrderStage(previous.status) !== customerOrderStage(next.status)) {
+          if (next.status === 'cancelled') setOrderJourneyExpanded(true);
+          announceOrderStatus(next);
+        }
         if (!['ready', 'done', 'cancelled'].includes(next.status)) schedule(document.visibilityState === 'hidden' ? 30000 : 10000);
       } catch {
         if (stopped) return;
@@ -899,6 +909,7 @@ function AppContent() {
           notificationPromptBusy={notificationPromptBusy}
           orderStatusNotice={orderStatusNotice}
           confirmTrackedOrderReceived={confirmTrackedOrderReceived}
+          dismissTrackedOrder={dismissTrackedOrder}
         />
       ) : view === 'login' || !authRole ? (
         <LoginPage locale={locale} theme={theme} onLogin={handleLogin} />
@@ -1215,6 +1226,7 @@ function MenuPage(props: {
   notificationPromptBusy: boolean;
   orderStatusNotice: string;
   confirmTrackedOrderReceived: (rating: number | null, feedback: string) => Promise<void>;
+  dismissTrackedOrder: () => void;
 }) {
   const filtered = useMemo(() => {
     return props.items
@@ -1301,6 +1313,7 @@ function MenuPage(props: {
           notificationPromptBusy={props.notificationPromptBusy}
           statusNotice={props.orderStatusNotice}
           onConfirmReceived={props.confirmTrackedOrderReceived}
+          onDismiss={props.dismissTrackedOrder}
         />
       )}
     </main>

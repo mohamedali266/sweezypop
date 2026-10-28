@@ -16,6 +16,7 @@ interface OrderJourneyProps {
   notificationPromptBusy?: boolean;
   statusNotice?: string;
   onConfirmReceived: (rating: number | null, feedback: string) => Promise<void>;
+  onDismiss: () => void;
 }
 
 type JourneyStage = 0 | 1 | 2;
@@ -27,7 +28,7 @@ const copy = {
     receivedTitle: 'We have your order', receivedBody: 'The kitchen will confirm it shortly.',
     preparingTitle: 'Your order is being prepared', preparingBody: 'We will let you know as soon as it is ready.',
     readyTitle: 'Ready for pickup', readyBody: 'Please collect your order at the counter.',
-    cancelledTitle: 'This order was cancelled', cancelledBody: 'Please speak to our team if you need help.',
+    cancelledTitle: 'Order cancelled', cancelledBody: 'Please return to the cashier to ask why this order was cancelled.', cancelledAction: 'Close',
     order: 'Order', summary: 'Order details', total: 'Total', customer: 'For', notes: 'Notes', item: 'item', items: 'items',
     notificationsTitle: 'Get a ready alert', notificationsBody: 'Enable alerts and sound so you can keep browsing the menu.',
     enableNotifications: 'Enable alerts & sound', enabling: 'Enabling',
@@ -47,7 +48,7 @@ const copy = {
     receivedTitle: 'Wir haben deine Bestellung', receivedBody: 'Die Küche bestätigt sie in Kürze.',
     preparingTitle: 'Deine Bestellung wird zubereitet', preparingBody: 'Wir sagen dir Bescheid, sobald sie fertig ist.',
     readyTitle: 'Bereit zur Abholung', readyBody: 'Bitte hole deine Bestellung an der Theke ab.',
-    cancelledTitle: 'Diese Bestellung wurde storniert', cancelledBody: 'Sprich bitte unser Team an, wenn du Hilfe brauchst.',
+    cancelledTitle: 'Bestellung storniert', cancelledBody: 'Bitte wende dich an die Kasse, um den Grund für die Stornierung zu erfahren.', cancelledAction: 'Schließen',
     order: 'Bestellung', summary: 'Bestelldetails', total: 'Gesamt', customer: 'Für', notes: 'Hinweis', item: 'Artikel', items: 'Artikel',
     notificationsTitle: 'Abholhinweis erhalten', notificationsBody: 'Aktiviere Hinweise und Ton und stöbere entspannt weiter.',
     enableNotifications: 'Hinweise & Ton aktivieren', enabling: 'Wird aktiviert',
@@ -72,7 +73,7 @@ function formatMoney(value: number, locale: Locale) {
 
 export function OrderJourney({
   locale, order, connection, expanded, onExpandedChange, notificationsEnabled, onEnableNotifications,
-  notificationPromptBusy = false, statusNotice, onConfirmReceived,
+  notificationPromptBusy = false, statusNotice, onConfirmReceived, onDismiss,
 }: OrderJourneyProps) {
   const text = copy[locale];
   const cancelled = order.status === 'cancelled';
@@ -246,7 +247,15 @@ export function OrderJourney({
           )}
 
           <div className="order-journey__body">
-            {done ? (
+            {cancelled ? (
+              <section className="order-journey__cancelled" aria-labelledby="order-journey-cancelled-title">
+                <span className="order-journey__cancelled-icon"><CircleAlert aria-hidden="true" /></span>
+                <small>{text.order} #{orderNumber}</small>
+                <h2 id="order-journey-cancelled-title">{text.cancelledTitle}</h2>
+                <p>{text.cancelledBody}</p>
+                <button type="button" onClick={onDismiss}>{text.cancelledAction}</button>
+              </section>
+            ) : done ? (
               <section className="order-journey__thank-you" aria-labelledby="order-journey-thanks-title">
                 <span className="order-journey__thank-you-check"><Check aria-hidden="true" /></span>
                 <small>{text.order} #{orderNumber}</small><h2 id="order-journey-thanks-title">{text.thankYouTitle}</h2><p>{text.thankYouBody}</p>
@@ -271,7 +280,7 @@ export function OrderJourney({
               </>
             )}
 
-            {!done && (
+            {!done && !cancelled && (
               <details className="order-journey__summary" open={cancelled}>
                 <summary><span><strong>{text.summary}</strong><small>{itemCount} {itemCount === 1 ? text.item : text.items}</small></span><span className="order-journey__summary-total">{formatMoney(order.total, locale)}</span><ChevronDown aria-hidden="true" /></summary>
                 <div className="order-journey__lines">
