@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -52,6 +52,26 @@ test('public tracking requires the private request key and returns immutable sna
   );
   for(let index=0;index<11;index+=1) await db.query('select get_public_order_tracking($1,$2)',[saved.id,key]);
   await assert.rejects(db.query('select get_public_order_tracking($1,$2)',[saved.id,key]),/Rate limit exceeded/);
+});
+test('customer receipt confirmation is capability-protected, ready-only and stores feedback',async () => {
+  const feedbackKey=randomUUID();
+  const order=await place(feedbackKey,[{id:'drink',quantity:1}],'menu','feedback-client-0001');
+  await assert.rejects(
+    db.query('select complete_public_order($1,$2,$3,$4)',[order.id,feedbackKey,5,'Great']),
+    /not ready/,
+  );
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  await db.query("select set_order_status($1,'new','preparing')",[order.id]);
+  await db.query("select set_order_status($1,'preparing','ready')",[order.id]);
+  await db.query("select set_config('test.uid','',false)");
+  await assert.rejects(
+    db.query('select complete_public_order($1,$2,$3,$4)',[order.id,randomUUID(),5,'Great']),
+    /Order not found/,
+  );
+  const completed=(await db.query('select complete_public_order($1,$2,$3,$4) result',[order.id,feedbackKey,5,'Great service'])).rows[0].result;
+  assert.equal(completed.status,'done');
+  assert.deepEqual((await db.query('select rating,feedback from order_feedback where order_id=$1',[order.id])).rows[0],{rating:5,feedback:'Great service'});
+  assert.equal((await db.query("select count(*)::int n from order_events where order_id=$1 and previous_status='ready' and next_status='done'",[order.id])).rows[0].n,1);
 });
 test('invalid line rolls back the entire order',async () => {
   const before=(await db.query('select count(*)::int as n from orders')).rows[0].n;

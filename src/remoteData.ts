@@ -401,6 +401,19 @@ export async function trackRemoteOrder(orderId: string, trackingToken: string): 
   };
 }
 
+export async function completeTrackedOrder(order: Order, rating: number | null, feedback: string): Promise<Order> {
+  if (!supabase || !order.trackingToken) throw new Error('Order tracking is not available.');
+  const { data, error } = await supabase.rpc('complete_public_order', {
+    p_id: order.id,
+    p_tracking_key: order.trackingToken,
+    p_rating: rating,
+    p_feedback: feedback.trim(),
+  });
+  if (error) throw error;
+  if (data?.status !== 'done') throw new Error('Order completion was not confirmed.');
+  return { ...order, status: 'done' };
+}
+
 export async function updateRemoteOrderStatus(order: Order, status: Order['status']) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.rpc('set_order_status', { p_id:order.id, p_expected:order.status, p_status:status });

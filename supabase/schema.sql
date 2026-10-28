@@ -160,6 +160,16 @@ create table if not exists staff_guides (
   constraint staff_guides_steps_de_size check (char_length(array_to_string(steps_de, '')) <= 20000)
 );
 
+create table if not exists order_feedback (
+  id uuid primary key default gen_random_uuid(),
+  order_id text not null unique references orders(id) on delete cascade,
+  restaurant_id text not null references restaurants(id) on delete cascade,
+  rating smallint check (rating between 1 and 5),
+  feedback text not null default '',
+  submitted_at timestamptz not null default now(),
+  constraint order_feedback_length check (char_length(feedback) <= 1000)
+);
+
 create index if not exists idx_categories_restaurant on categories(restaurant_id, sort_order);
 create index if not exists idx_menu_items_restaurant on menu_items(restaurant_id, sort_order);
 create index if not exists idx_orders_restaurant on orders(restaurant_id, created_at desc);
@@ -176,6 +186,7 @@ alter table menu_items enable row level security;
 alter table opening_hours enable row level security;
 alter table orders enable row level security;
 alter table staff_guides enable row level security;
+alter table order_feedback enable row level security;
 alter table order_lines enable row level security;
 
 create or replace function current_profile_role()

@@ -48,6 +48,7 @@ import { categories as seedCategories, defaultTheme, initialOrders, menuItems as
 import { t } from './i18n';
 import {
   completeTemporaryPasswordChange,
+  completeTrackedOrder,
   createAdminUser,
   deleteAdminUser,
   createRemoteOrder,
@@ -360,6 +361,16 @@ function AppContent() {
     } finally {
       setNotificationPromptBusy(false);
     }
+  };
+
+  const confirmTrackedOrderReceived = async (rating: number | null, feedback: string) => {
+    const current = trackedOrderRef.current;
+    if (!current) throw new Error('Order tracking is not available.');
+    const completed = await completeTrackedOrder(current, rating, feedback);
+    trackedOrderRef.current = completed;
+    setTrackedOrder(completed);
+    setOrderStatusNotice(locale === 'de' ? 'Danke! Wir freuen uns auf deinen nächsten Besuch.' : 'Thank you! We look forward to seeing you next time.');
+    window.setTimeout(() => setOrderJourneyExpanded(false), 3800);
   };
 
   const applyRemoteState = (remoteState: RemoteState) => {
@@ -882,6 +893,7 @@ function AppContent() {
           enableOrderNotifications={() => void enableOrderNotifications()}
           notificationPromptBusy={notificationPromptBusy}
           orderStatusNotice={orderStatusNotice}
+          confirmTrackedOrderReceived={confirmTrackedOrderReceived}
         />
       ) : view === 'login' || !authRole ? (
         <LoginPage locale={locale} theme={theme} onLogin={handleLogin} />
@@ -1197,6 +1209,7 @@ function MenuPage(props: {
   enableOrderNotifications: () => void;
   notificationPromptBusy: boolean;
   orderStatusNotice: string;
+  confirmTrackedOrderReceived: (rating: number | null, feedback: string) => Promise<void>;
 }) {
   const filtered = useMemo(() => {
     return props.items
@@ -1282,6 +1295,7 @@ function MenuPage(props: {
           onEnableNotifications={props.enableOrderNotifications}
           notificationPromptBusy={props.notificationPromptBusy}
           statusNotice={props.orderStatusNotice}
+          onConfirmReceived={props.confirmTrackedOrderReceived}
         />
       )}
     </main>
