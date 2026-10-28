@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -40,6 +40,18 @@ test('atomic order, server prices, snapshots and unique number', async () => {
 test('idempotent retries return the exact existing order; changed requests rejected',async () => {
   assert.equal((await place(key,[{id:'cake',quantity:2,price:0.01}])).id,saved.id);
   await assert.rejects(place(key,[{id:'cake',quantity:3}]),/Request key/);
+});
+test('public tracking requires the private request key and returns immutable snapshots',async () => {
+  const tracked=(await db.query('select get_public_order_tracking($1,$2) result',[saved.id,key])).rows[0].result;
+  assert.equal(tracked.order_number,saved.order_number);
+  assert.equal(tracked.status,'new');
+  assert.equal(tracked.lines[0].name_de,'Kuchen');
+  await assert.rejects(
+    db.query('select get_public_order_tracking($1,$2)',[saved.id,randomUUID()]),
+    /Order not found/,
+  );
+  for(let index=0;index<11;index+=1) await db.query('select get_public_order_tracking($1,$2)',[saved.id,key]);
+  await assert.rejects(db.query('select get_public_order_tracking($1,$2)',[saved.id,key]),/Rate limit exceeded/);
 });
 test('invalid line rolls back the entire order',async () => {
   const before=(await db.query('select count(*)::int as n from orders')).rows[0].n;

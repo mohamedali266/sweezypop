@@ -359,12 +359,46 @@ export async function createRemoteOrder(input: OrderInput): Promise<Order> {
   });
   if (error) throw error;
   if (!data?.id || !data?.created_at) throw new Error('Keine Bestaetigung vom Server. Bitte erneut versuchen.');
-  return { id:data.id, orderNumber:String(data.order_number), total:Number(data.total), createdAt:data.created_at,
+  return { id:data.id, orderNumber:String(data.order_number), trackingToken:input.requestKey, total:Number(data.total), createdAt:data.created_at,
     source:input.source || 'menu', customerName:input.name.trim(), notes:input.notes.trim(),
     status:'new', lines:(data.lines as { id:string; name_en:string; name_de:string; price:number; quantity:number }[]).map(line => ({
       quantity:line.quantity, item:{ id:line.id, name:{en:line.name_en,de:line.name_de}, price:Number(line.price),
         categoryId:'snapshot',description:{en:'',de:''},available:false,sortOrder:0,imageStyle:'' },
     })) };
+}
+
+export async function trackRemoteOrder(orderId: string, trackingToken: string): Promise<Order> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_public_order_tracking', {
+    p_id: orderId,
+    p_tracking_key: trackingToken,
+  });
+  if (error) throw error;
+  if (!data?.id || !Array.isArray(data.lines)) throw new Error('Invalid tracking response.');
+  return {
+    id: data.id,
+    orderNumber: String(data.order_number ?? data.id),
+    trackingToken,
+    source: 'menu',
+    customerName: data.customer_name,
+    notes: data.notes || '',
+    total: Number(data.total),
+    status: data.status,
+    createdAt: data.created_at,
+    lines: data.lines.map((line: { id: string | null; name_en: string; name_de: string; price: number; quantity: number }) => ({
+      quantity: Number(line.quantity),
+      item: {
+        id: line.id || `snapshot-${data.id}`,
+        name: { en: line.name_en, de: line.name_de },
+        price: Number(line.price),
+        categoryId: 'snapshot',
+        description: { en: '', de: '' },
+        available: false,
+        sortOrder: 0,
+        imageStyle: '',
+      },
+    })),
+  };
 }
 
 export async function updateRemoteOrderStatus(order: Order, status: Order['status']) {

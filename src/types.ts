@@ -41,6 +41,7 @@ export interface CartLine {
 export interface Order {
   id: string;
   orderNumber?: string;
+  trackingToken?: string;
   source?: 'menu' | 'pos';
   customerName: string;
   notes: string;

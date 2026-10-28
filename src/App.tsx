@@ -7,6 +7,7 @@ import { OrdersWorkspace } from './OrdersWorkspace';
 import { StaffManagement } from './StaffManagement';
 import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
+import { OrderJourney } from './OrderJourney';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
@@ -55,6 +56,7 @@ import {
   saveRemoteState,
   saveRemoteSiteSettings,
   saveRemoteUsers,
+  trackRemoteOrder,
   updateRemoteOrderStatus,
   type AdminUserPayload,
   type RemoteState,
@@ -113,6 +115,7 @@ const storageKeys = {
   hours: 'sweezypop.hours',
   dashboardView: 'sweezypop.dashboardView',
   pwaInstallDismissed: 'sweezypop.pwaInstallDismissed.v2',
+  activeOrder: 'sweezypop.activeOrder.v1',
 } as const;
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -127,6 +130,20 @@ function loadStored<T>(key: string, fallback: T): T {
 
 function saveStored(key: string, value: unknown) {
   try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage is optional. */ }
+}
+
+function loadActiveOrder() {
+  const order = loadStored<Order | null>(storageKeys.activeOrder, null);
+  if (!order?.id || !order.trackingToken || !Array.isArray(order.lines) || !order.createdAt) return null;
+  const age = Date.now() - new Date(order.createdAt).getTime();
+  return age >= 0 && age < 24 * 60 * 60 * 1000 ? order : null;
+}
+
+function customerOrderStage(status: Order['status']) {
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'ready' || status === 'done') return 'ready';
+  if (status === 'preparing') return 'preparing';
+  return 'received';
 }
 
 function safeArray<T>(value: unknown, fallback: T[]): T[] {
@@ -257,7 +274,12 @@ function AppContent() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [authRole, setAuthRole] = useState<UserRole | null>(null);
   const [authProfile, setAuthProfile] = useState<{ name:string; restaurantId:string } | null>(null);
-  const [submittedOrderId, setSubmittedOrderId] = useState('');
+  const [trackedOrder, setTrackedOrder] = useState<Order | null>(() => loadActiveOrder());
+  const [orderJourneyExpanded, setOrderJourneyExpanded] = useState(() => Boolean(loadActiveOrder()));
+  const [trackingConnection, setTrackingConnection] = useState<'live' | 'checking' | 'offline'>('checking');
+  const [orderStatusNotice, setOrderStatusNotice] = useState('');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -273,6 +295,72 @@ function AppContent() {
   const [syncVersion, setSyncVersion] = useState(0);
   const requestAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const orderInFlight = useRef(false);
+  const trackedOrderRef = useRef<Order | null>(trackedOrder);
+  const orderAudioContext = useRef<AudioContext | null>(null);
+
+  const playOrderTone = (ready = false) => {
+    const context = orderAudioContext.current;
+    if (!context || context.state !== 'running') return;
+    const tone = (frequency: number, delay: number) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = frequency;
+      oscillator.type = 'sine';
+      gain.gain.setValueAtTime(0.0001, context.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + delay + 0.22);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(context.currentTime + delay);
+      oscillator.stop(context.currentTime + delay + 0.24);
+    };
+    tone(ready ? 740 : 560, 0);
+    if (ready) tone(920, 0.2);
+  };
+
+  const orderStatusText = (status: Order['status']) => {
+    if (status === 'preparing') return locale === 'de' ? 'Deine Bestellung wird jetzt zubereitet.' : 'Your order is now being prepared.';
+    if (status === 'ready' || status === 'done') return locale === 'de' ? 'Deine Bestellung ist abholbereit.' : 'Your order is ready for pickup.';
+    if (status === 'cancelled') return locale === 'de' ? 'Deine Bestellung wurde storniert.' : 'Your order was cancelled.';
+    return locale === 'de' ? 'Deine Bestellung wurde angenommen.' : 'Your order has been received.';
+  };
+
+  const announceOrderStatus = (order: Order) => {
+    const message = orderStatusText(order.status);
+    setOrderStatusNotice(message);
+    window.setTimeout(() => setOrderStatusNotice(''), 5000);
+    if (!notificationsEnabled) return;
+    playOrderTone(order.status === 'ready' || order.status === 'done');
+    if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+      new Notification(locale === 'de' ? `Bestellung #${order.orderNumber}` : `Order #${order.orderNumber}`, {
+        body: message,
+        icon: theme.logoUrl || '/pwa-icon.svg',
+        tag: `order-${order.id}`,
+      });
+    }
+  };
+
+  const enableOrderNotifications = async () => {
+    if (notificationPromptBusy) return;
+    setNotificationPromptBusy(true);
+    try {
+      let audioReady = false;
+      try {
+        if (!orderAudioContext.current) orderAudioContext.current = new AudioContext();
+        await orderAudioContext.current.resume();
+        audioReady = orderAudioContext.current.state === 'running';
+      } catch {
+        audioReady = false;
+      }
+      let browserNotificationsReady = 'Notification' in window && Notification.permission === 'granted';
+      if ('Notification' in window && Notification.permission === 'default') {
+        browserNotificationsReady = (await Notification.requestPermission()) === 'granted';
+      }
+      setNotificationsEnabled(audioReady || browserNotificationsReady);
+      if (audioReady) playOrderTone(false);
+    } finally {
+      setNotificationPromptBusy(false);
+    }
+  };
 
   const applyRemoteState = (remoteState: RemoteState) => {
     baseline.current = remoteState;
@@ -497,10 +585,69 @@ function AppContent() {
   }, [theme.menuUrl]);
 
   useEffect(() => {
-    if (!submittedOrderId) return;
-    const successTimer = window.setTimeout(() => setSubmittedOrderId(''), 5000);
-    return () => window.clearTimeout(successTimer);
-  }, [submittedOrderId]);
+    trackedOrderRef.current = trackedOrder;
+    if (trackedOrder) saveStored(storageKeys.activeOrder, trackedOrder);
+    else window.localStorage.removeItem(storageKeys.activeOrder);
+  }, [trackedOrder]);
+
+  useEffect(() => {
+    const orderId = trackedOrder?.id;
+    const trackingToken = trackedOrder?.trackingToken;
+    if (!orderId || !trackingToken || view !== 'menu') return;
+    let stopped = false;
+    let failures = 0;
+    let timer = 0;
+
+    const schedule = (delay: number) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void refresh(), delay);
+    };
+    const refresh = async () => {
+      if (stopped) return;
+      if (!navigator.onLine) {
+        setTrackingConnection('offline');
+        schedule(document.visibilityState === 'hidden' ? 30000 : 15000);
+        return;
+      }
+      setTrackingConnection(failures ? 'checking' : 'live');
+      try {
+        const next = await trackRemoteOrder(orderId, trackingToken);
+        if (stopped) return;
+        const previous = trackedOrderRef.current;
+        failures = 0;
+        setTrackingConnection('live');
+        trackedOrderRef.current = next;
+        setTrackedOrder(next);
+        if (previous && customerOrderStage(previous.status) !== customerOrderStage(next.status)) announceOrderStatus(next);
+        if (!['ready', 'done', 'cancelled'].includes(next.status)) schedule(document.visibilityState === 'hidden' ? 30000 : 10000);
+      } catch {
+        if (stopped) return;
+        failures += 1;
+        setTrackingConnection('offline');
+        schedule(Math.min(60000, 10000 * 2 ** Math.min(failures, 3)));
+      }
+    };
+    const refreshNow = () => {
+      if (document.visibilityState === 'visible') {
+        window.clearTimeout(timer);
+        void refresh();
+      }
+    };
+
+    void refresh();
+    window.addEventListener('online', refreshNow);
+    window.addEventListener('focus', refreshNow);
+    document.addEventListener('visibilitychange', refreshNow);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('online', refreshNow);
+      window.removeEventListener('focus', refreshNow);
+      document.removeEventListener('visibilitychange', refreshNow);
+    };
+    // Notification preferences are intentionally captured for status transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedOrder?.id, trackedOrder?.trackingToken, view, locale, notificationsEnabled]);
 
   useEffect(() => {
     if (activeCategory === 'all') return;
@@ -568,7 +715,6 @@ function AppContent() {
 
   const addToCart = (item: MenuItem) => {
     if (!canOrder(item, items)) return;
-    setSubmittedOrderId('');
     setCart((current) => {
       const existing = current.find((line) => line.item.id === item.id);
       if (existing) {
@@ -598,7 +744,10 @@ function AppContent() {
     try {
       const order = await createRemoteOrder({ ...payload, lines:cart, requestKey:requestAttempt.current.key });
       setCart([]);
-      setSubmittedOrderId(order.orderNumber || order.id);
+      trackedOrderRef.current = order;
+      setTrackedOrder(order);
+      setTrackingConnection('live');
+      setOrderJourneyExpanded(true);
       requestAttempt.current = null;
     } finally { orderInFlight.current = false; }
   };
@@ -725,7 +874,14 @@ function AppContent() {
           updateCartQuantity={updateCartQuantity}
           removeCartLine={removeCartLine}
           submitOrder={submitOrder}
-          submittedOrderId={submittedOrderId}
+          trackedOrder={trackedOrder}
+          trackingConnection={trackingConnection}
+          orderJourneyExpanded={orderJourneyExpanded}
+          setOrderJourneyExpanded={setOrderJourneyExpanded}
+          notificationsEnabled={notificationsEnabled}
+          enableOrderNotifications={() => void enableOrderNotifications()}
+          notificationPromptBusy={notificationPromptBusy}
+          orderStatusNotice={orderStatusNotice}
         />
       ) : view === 'login' || !authRole ? (
         <LoginPage locale={locale} theme={theme} onLogin={handleLogin} />
@@ -1033,7 +1189,14 @@ function MenuPage(props: {
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
   submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
-  submittedOrderId: string;
+  trackedOrder: Order | null;
+  trackingConnection: 'live' | 'checking' | 'offline';
+  orderJourneyExpanded: boolean;
+  setOrderJourneyExpanded: (expanded: boolean) => void;
+  notificationsEnabled: boolean;
+  enableOrderNotifications: () => void;
+  notificationPromptBusy: boolean;
+  orderStatusNotice: string;
 }) {
   const filtered = useMemo(() => {
     return props.items
@@ -1107,8 +1270,20 @@ function MenuPage(props: {
         updateCartQuantity={props.updateCartQuantity}
         removeCartLine={props.removeCartLine}
         submitOrder={props.submitOrder}
-        submittedOrderId={props.submittedOrderId}
       />
+      {props.trackedOrder && props.cart.length === 0 && (
+        <OrderJourney
+          locale={props.locale}
+          order={props.trackedOrder}
+          connection={props.trackingConnection}
+          expanded={props.orderJourneyExpanded}
+          onExpandedChange={props.setOrderJourneyExpanded}
+          notificationsEnabled={props.notificationsEnabled}
+          onEnableNotifications={props.enableOrderNotifications}
+          notificationPromptBusy={props.notificationPromptBusy}
+          statusNotice={props.orderStatusNotice}
+        />
+      )}
     </main>
   );
 }
@@ -1320,14 +1495,12 @@ function CartPanel({
   updateCartQuantity,
   removeCartLine,
   submitOrder,
-  submittedOrderId,
 }: {
   locale: Locale;
   cart: CartLine[];
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
   submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
-  submittedOrderId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -1353,20 +1526,8 @@ function CartPanel({
     } finally { setSubmitting(false); }
   };
 
-  if (!cart.length && !submittedOrderId) {
+  if (!cart.length) {
     return null;
-  }
-
-  if (submittedOrderId && !cart.length) {
-    return (
-      <div className="cart-success-bubble" role="status">
-        <span>
-          <Check size={26} />
-        </span>
-        <strong>{t(locale, 'orderSuccess')}</strong>
-        <small>{t(locale, 'orderNumber')} {submittedOrderId}</small>
-      </div>
-    );
   }
 
   return (
