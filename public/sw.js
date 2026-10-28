@@ -1,7 +1,16 @@
 /* global self, caches, fetch, URL, Response */
 
-const CACHE_NAME = 'sweezypop-static-v2';
-const CORE_ASSETS = ['/', '/pwa-icon.svg', '/sweezypop-loader-v3.svg'];
+const CACHE_NAME = 'sweezypop-static-v3';
+const CORE_ASSETS = [
+  '/',
+  '/pwa-icon.svg',
+  '/sweezypop-loader-v3.svg',
+  '/order-received.gif',
+  '/order-preparing.gif',
+  '/order-ready.gif',
+  '/flags/de.svg',
+  '/flags/gb.svg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)));

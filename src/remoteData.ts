@@ -697,11 +697,19 @@ export function subscribeToStaffOrders(
 ) {
   if (!supabase) return () => undefined;
   const client = supabase;
+  let refreshTimer = 0;
+  const scheduleRefresh = () => {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(onChange, 90);
+  };
   const channel = client
     .channel(`staff-orders-${restaurantId}-${crypto.randomUUID()}`)
-    .on('postgres_changes', { event:'*', schema:'public', table:'orders', filter:`restaurant_id=eq.${restaurantId}` }, onChange)
+    .on('postgres_changes', { event:'*', schema:'public', table:'staff_order_signals', filter:`restaurant_id=eq.${restaurantId}` }, scheduleRefresh)
     .subscribe(status => onConnectionChange?.(status === 'SUBSCRIBED' ? 'live' : status === 'CLOSED' || status === 'CHANNEL_ERROR' ? 'offline' : 'reconnecting'));
-  return () => { void client.removeChannel(channel); };
+  return () => {
+    window.clearTimeout(refreshTimer);
+    void client.removeChannel(channel);
+  };
 }
 
 export async function loadStaffDirectory(): Promise<StaffDirectoryEntry[]> {

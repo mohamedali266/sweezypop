@@ -87,8 +87,14 @@ export function OrderJourney({
   const [feedback, setFeedback] = useState('');
   const [confirmationState, setConfirmationState] = useState<'idle' | 'busy' | 'failed'>('idle');
   const [dragOffset, setDragOffset] = useState(0);
-  const [dragHeight, setDragHeight] = useState<number | null>(null);
-  const drag = useRef({ pointerId: -1, startY: 0, startHeight: 0, lastY: 0, lastAt: 0, recentY: 0, recentAt: 0, moved: false, mobile: false });
+  const [dragPreview, setDragPreview] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [visualRetry, setVisualRetry] = useState(0);
+  const [visualFailed, setVisualFailed] = useState(false);
+  const journeyRef = useRef<HTMLElement | null>(null);
+  const dragFrame = useRef<number | null>(null);
+  const pendingDragHeight = useRef<number | null>(null);
+  const drag = useRef({ pointerId: -1, startY: 0, startHeight: 0, lastY: 0, lastAt: 0, recentY: 0, recentAt: 0, moved: false, mobile: false, preview: false });
   const suppressClick = useRef(false);
 
   useEffect(() => {
@@ -112,6 +118,23 @@ export function OrderJourney({
 
   useEffect(() => { setConfirmationState('idle'); }, [order.status]);
 
+  useEffect(() => {
+    stageVisuals.forEach((source) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = source;
+    });
+  }, []);
+
+  useEffect(() => {
+    setVisualRetry(0);
+    setVisualFailed(false);
+  }, [currentStage]);
+
+  useEffect(() => () => {
+    if (dragFrame.current !== null) window.cancelAnimationFrame(dragFrame.current);
+  }, []);
+
   const stageLabels = [text.received, text.preparing, text.ready];
   const stageIcons = [ReceiptText, Utensils, Check];
   const statusContent = cancelled
@@ -134,10 +157,10 @@ export function OrderJourney({
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const now = performance.now();
     const mobile = window.matchMedia('(max-width: 600px)').matches;
-    const startHeight = expanded
-      ? Math.min(window.innerHeight * 0.9, 820)
-      : event.currentTarget.getBoundingClientRect().height;
-    drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, lastY: event.clientY, lastAt: now, recentY: event.clientY, recentAt: now, moved: false, mobile };
+    const shell = event.currentTarget.closest('.order-journey');
+    const startHeight = shell instanceof HTMLElement ? shell.getBoundingClientRect().height : event.currentTarget.getBoundingClientRect().height;
+    drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, lastY: event.clientY, lastAt: now, recentY: event.clientY, recentAt: now, moved: false, mobile, preview: false };
+    setIsDragging(true);
     const captureTarget = event.currentTarget.closest('.order-journey');
     if (captureTarget instanceof HTMLElement) captureTarget.setPointerCapture(event.pointerId);
   };
@@ -156,7 +179,18 @@ export function OrderJourney({
     if (drag.current.mobile) {
       const minimum = 84 + Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0');
       const maximum = window.innerHeight * 0.9;
-      setDragHeight(Math.min(maximum, Math.max(minimum, drag.current.startHeight - delta)));
+      const height = Math.min(maximum, Math.max(minimum, drag.current.startHeight - delta));
+      if (!expanded && height > 96 && !drag.current.preview) {
+        drag.current.preview = true;
+        setDragPreview(true);
+      }
+      pendingDragHeight.current = height;
+      if (dragFrame.current === null) {
+        dragFrame.current = window.requestAnimationFrame(() => {
+          if (pendingDragHeight.current !== null) journeyRef.current?.style.setProperty('--drag-height', `${pendingDragHeight.current}px`);
+          dragFrame.current = null;
+        });
+      }
     } else {
       setDragOffset(expanded ? Math.max(0, delta) : Math.min(0, delta));
     }
@@ -169,7 +203,10 @@ export function OrderJourney({
     suppressClick.current = drag.current.moved;
     drag.current.pointerId = -1;
     setDragOffset(0);
-    setDragHeight(null);
+    setIsDragging(false);
+    setDragPreview(false);
+    pendingDragHeight.current = null;
+    journeyRef.current?.style.removeProperty('--drag-height');
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (expanded && (distance > 72 || velocity > 0.55)) onExpandedChange(false);
     if (!expanded && (distance < -36 || velocity < -0.45)) onExpandedChange(true);
@@ -180,7 +217,10 @@ export function OrderJourney({
     suppressClick.current = false;
     drag.current.pointerId = -1;
     setDragOffset(0);
-    setDragHeight(null);
+    setIsDragging(false);
+    setDragPreview(false);
+    pendingDragHeight.current = null;
+    journeyRef.current?.style.removeProperty('--drag-height');
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -204,12 +244,13 @@ export function OrderJourney({
     onLostPointerCapture: cancelDrag,
   };
 
-  const showingPanel = expanded || (dragHeight !== null && dragHeight > 96);
+  const showingPanel = expanded || dragPreview;
 
   return (
     <aside
-      className={`order-journey ${showingPanel ? 'is-expanded' : 'is-collapsed'} stage-${currentStage} ${cancelled ? 'is-cancelled' : ''} ${done ? 'is-done' : ''} ${dragOffset || dragHeight !== null ? 'is-dragging' : ''}`}
-      style={{ '--drag-offset': `${dragOffset}px`, '--drag-height': dragHeight === null ? undefined : `${dragHeight}px` } as CSSProperties}
+      ref={journeyRef}
+      className={`order-journey ${showingPanel ? 'is-expanded' : 'is-collapsed'} stage-${currentStage} ${cancelled ? 'is-cancelled' : ''} ${done ? 'is-done' : ''} ${isDragging ? 'is-dragging' : ''}`}
+      style={{ '--drag-offset': `${dragOffset}px` } as CSSProperties}
       aria-label={text.tracker}
       {...gestureTrackingProps}
     >
@@ -263,7 +304,21 @@ export function OrderJourney({
             ) : (
               <>
                 <div className="order-journey__scene" key={order.status}>
-                  <img src={stageVisuals[currentStage]} alt={statusContent.label} />
+                  {!visualFailed ? (
+                    <img
+                      src={`${stageVisuals[currentStage]}${visualRetry ? '?retry=1' : ''}`}
+                      alt={statusContent.label}
+                      loading="eager"
+                      decoding="async"
+                      fetchPriority="high"
+                      onError={() => visualRetry === 0 ? setVisualRetry(1) : setVisualFailed(true)}
+                    />
+                  ) : (
+                    <span className="order-journey__scene-fallback" role="img" aria-label={statusContent.label}>
+                      {currentStage === 0 ? <ReceiptText aria-hidden="true" /> : currentStage === 1 ? <Utensils aria-hidden="true" /> : <Check aria-hidden="true" />}
+                      <strong>{statusContent.label}</strong>
+                    </span>
+                  )}
                 </div>
                 <ol className="order-journey__progress" aria-label={text.current}>
                   {stageLabels.map((label, index) => {

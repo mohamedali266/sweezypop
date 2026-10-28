@@ -236,6 +236,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const initialBoardLoaded = useRef(false);
   const audioContext = useRef<AudioContext | null>(null);
   const mounted = useRef(true);
+  const boardRefreshInFlight = useRef(false);
   const endShiftTrigger = useRef<HTMLButtonElement | null>(null);
   const endDialogClose = useRef<HTMLButtonElement | null>(null);
 
@@ -266,6 +267,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   }, []);
 
   const refreshBoard = useCallback(async (initial = false) => {
+    if (boardRefreshInFlight.current) return;
+    boardRefreshInFlight.current = true;
     try {
       const next: StaffBoardOrder[] = await loadStaffOrderBoard();
       if (!mounted.current) return;
@@ -285,6 +288,8 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
       if (!mounted.current) return;
       setConnection(navigator.onLine ? 'reconnecting' : 'offline');
       setError(text.loadFailed);
+    } finally {
+      boardRefreshInFlight.current = false;
     }
   }, [playNewOrderSound, text.loadFailed]);
 
@@ -313,7 +318,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   useEffect(() => {
     if (!shift) return;
     const unsubscribe = subscribeToStaffOrders(restaurantId, () => void refreshBoard(), state => setConnection(state));
-    const fallback = window.setInterval(() => void refreshBoard(), 15000);
+    const fallback = window.setInterval(() => void refreshBoard(), 10000);
     const onFocus = () => void refreshBoard();
     const onOnline = () => { setConnection('reconnecting'); void refreshBoard(); };
     const onOffline = () => setConnection('offline');

@@ -8,7 +8,7 @@ import { StaffManagement } from './StaffManagement';
 import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
 import { OrderJourney } from './OrderJourney';
-import { MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
+import { FooterManager, MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
   BadgeDollarSign,
@@ -17,6 +17,7 @@ import {
   ChefHat,
   Check,
   ClipboardList,
+  Copyright,
   CircleUserRound,
   Download,
   FileSpreadsheet,
@@ -67,7 +68,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'password-change';
-type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'footer' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -117,6 +118,7 @@ const storageKeys = {
   hours: 'sweezypop.hours',
   dashboardView: 'sweezypop.dashboardView',
   pwaInstallDismissed: 'sweezypop.pwaInstallDismissed.v2',
+  menuPwaInstallDismissed: 'sweezypop.menuPwaInstallDismissed.v1',
   activeOrder: 'sweezypop.activeOrder.v1',
 } as const;
 
@@ -431,11 +433,12 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const isDashboardManifest = Boolean(authRole);
     const manifest = {
-      name: `${theme.siteName} Dashboard`,
+      name: isDashboardManifest ? `${theme.siteName} Dashboard` : `${theme.siteName} Menu`,
       short_name: theme.siteName.slice(0, 12) || 'Sweezypop',
-      description: 'Restaurant menu dashboard and QR ordering workspace.',
-      start_url: '/#login',
+      description: isDashboardManifest ? 'Restaurant dashboard and ordering workspace.' : 'Restaurant menu and live order tracking.',
+      start_url: isDashboardManifest ? '/#login' : '/',
       scope: '/',
       display: 'standalone',
       background_color: theme.background,
@@ -463,7 +466,7 @@ function AppContent() {
     appleIcon.href = theme.logoUrl || '/pwa-icon.svg';
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.primary);
     return () => URL.revokeObjectURL(manifestUrl);
-  }, [theme.background, theme.logoUrl, theme.primary, theme.siteName]);
+  }, [authRole, theme.background, theme.logoUrl, theme.primary, theme.siteName]);
 
   useEffect(() => {
     const standalone = window.matchMedia('(display-mode: standalone)').matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
@@ -472,7 +475,8 @@ function AppContent() {
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event as BeforeInstallPromptEvent);
-      if (authRole && !standalone && !loadStored(storageKeys.pwaInstallDismissed, false)) setShowInstallBanner(true);
+      const dismissalKey = authRole ? storageKeys.pwaInstallDismissed : storageKeys.menuPwaInstallDismissed;
+      if ((authRole || view === 'menu') && !standalone && !loadStored(dismissalKey, false)) setShowInstallBanner(true);
     };
 
     const onInstalled = () => {
@@ -488,16 +492,17 @@ function AppContent() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
       window.removeEventListener('appinstalled', onInstalled);
     };
-  }, [authRole]);
+  }, [authRole, view]);
 
   useEffect(() => {
-    if (authRole && !isStandalone) {
-      if (loadStored(storageKeys.pwaInstallDismissed, false)) return;
+    if ((authRole || view === 'menu') && !isStandalone) {
+      const dismissalKey = authRole ? storageKeys.pwaInstallDismissed : storageKeys.menuPwaInstallDismissed;
+      if (loadStored(dismissalKey, false)) return;
       const timer = window.setTimeout(() => setShowInstallBanner(true), 1200);
       return () => window.clearTimeout(timer);
     }
     setShowInstallBanner(false);
-  }, [authRole, isStandalone]);
+  }, [authRole, isStandalone, view]);
 
   useEffect(() => {
     void restoreDashboardSession().catch(() => setLoadError('Sitzung konnte nicht geladen werden. Bitte erneut anmelden.'));
@@ -824,7 +829,7 @@ function AppContent() {
     window.history.replaceState(null, '', window.location.pathname);
   };
 
-  const installDashboardApp = async () => {
+  const installApp = async () => {
     if (!installPrompt) {
       setShowInstallGuide(true);
       return;
@@ -840,7 +845,7 @@ function AppContent() {
   };
 
   const dismissInstallBanner = () => {
-    saveStored(storageKeys.pwaInstallDismissed, true);
+    saveStored(authRole ? storageKeys.pwaInstallDismissed : storageKeys.menuPwaInstallDismissed, true);
     setShowInstallGuide(false);
     setShowInstallBanner(false);
   };
@@ -865,13 +870,14 @@ function AppContent() {
     >
       {showLoader && <LoaderScreen />}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
-      {authRole && showInstallBanner && !isStandalone && (
+      {showInstallBanner && !isStandalone && (authRole || view === 'menu') && (
         <InstallAppBanner
           locale={locale}
           theme={theme}
+          audience={authRole ? 'dashboard' : 'menu'}
           canInstall={Boolean(installPrompt)}
           showGuide={showInstallGuide}
-          onInstall={() => void installDashboardApp()}
+          onInstall={() => void installApp()}
           onDismissGuide={() => setShowInstallGuide(false)}
           onDismiss={dismissInstallBanner}
         />
@@ -1014,6 +1020,7 @@ function PullToRefreshIndicator({ distance, refreshing }: { distance: number; re
 function InstallAppBanner({
   locale,
   theme,
+  audience,
   canInstall,
   showGuide,
   onInstall,
@@ -1022,18 +1029,29 @@ function InstallAppBanner({
 }: {
   locale: Locale;
   theme: ThemeSettings;
+  audience: 'menu' | 'dashboard';
   canInstall: boolean;
   showGuide: boolean;
   onInstall: () => void;
   onDismissGuide: () => void;
   onDismiss: () => void;
 }) {
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const title = audience === 'menu'
+    ? (locale === 'de' ? 'Menü als App installieren' : 'Install menu app')
+    : t(locale, 'installDashboard');
+  const directCopy = audience === 'menu'
+    ? (locale === 'de' ? 'Menü und Bestellstatus direkt vom Startbildschirm öffnen.' : 'Open the menu and live order status directly from your home screen.')
+    : t(locale, 'installDashboardCopy');
+  const manualCopy = isIos
+    ? (locale === 'de' ? 'In Safari auf Teilen und dann auf „Zum Home-Bildschirm“ tippen.' : 'In Safari, tap Share, then Add to Home Screen.')
+    : (locale === 'de' ? 'Im Browsermenü „App installieren“ auswählen.' : 'Open the browser menu and choose Install app.');
   return (
-    <aside className="install-banner animated-panel" role="status">
+    <aside className={`install-banner animated-panel install-banner--${audience}`} role="status" aria-label={title}>
       <BrandMark theme={theme} />
       <div>
-        <strong>{t(locale, 'installDashboard')}</strong>
-        <p>{canInstall ? t(locale, 'installDashboardCopy') : t(locale, 'installIosCopy')}</p>
+        <strong>{title}</strong>
+        <p>{canInstall ? directCopy : manualCopy}</p>
       </div>
       <button type="button" className="small-action" onClick={onInstall}>
         {t(locale, 'install')}
@@ -1044,7 +1062,7 @@ function InstallAppBanner({
       {showGuide && !canInstall && (
         <div className="install-guide" role="status">
           <strong>{t(locale, 'installManualTitle')}</strong>
-          <p>{t(locale, 'installManualSteps')}</p>
+          <p>{manualCopy}</p>
           <button type="button" onClick={onDismissGuide}>{t(locale, 'gotIt')}</button>
         </div>
       )}
@@ -1671,7 +1689,7 @@ function Dashboard(props: {
   }, [activeSection]);
 
   useEffect(() => {
-    if (activeSection === 'users' && props.mode !== 'admin') {
+    if ((activeSection === 'users' || activeSection === 'footer') && props.mode !== 'admin') {
       setActiveSection('overview');
     }
   }, [activeSection, props.mode]);
@@ -1694,7 +1712,7 @@ function Dashboard(props: {
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
-    { id: 'reviews', label: props.locale === 'de' ? 'Bewertungen & Footer' : 'Reviews & footer', icon: MessageCircle },
+    { id: 'reviews', label: props.locale === 'de' ? 'Bewertungen' : 'Reviews', icon: MessageCircle },
     { id: 'hours', label: t(props.locale, 'hours'), icon: CalendarClock },
     { id: 'orders', label: t(props.locale, 'orders'), icon: ClipboardList },
     { id: 'staff-guide', label: props.locale === 'de' ? 'Mitarbeiterleitfaden' : 'Staff guide', icon: BookOpenText },
@@ -1702,6 +1720,7 @@ function Dashboard(props: {
   ];
 
   if (props.mode === 'admin') {
+    sidebarItems.push({ id: 'footer', label: 'Footer', icon: Copyright });
     sidebarItems.push({ id: 'users', label: t(props.locale, 'users'), icon: UsersRound });
   }
 
@@ -2000,10 +2019,13 @@ function Dashboard(props: {
           {activeSection === 'reviews' && (
             <ReviewsManager
               locale={props.locale}
-              isAdmin={props.mode === 'admin'}
               theme={props.theme}
               onThemeChange={props.setTheme}
             />
+          )}
+
+          {activeSection === 'footer' && props.mode === 'admin' && (
+            <FooterManager locale={props.locale} theme={props.theme} onThemeChange={props.setTheme} />
           )}
 
           {activeSection === 'hours' && (

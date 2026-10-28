@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -147,7 +147,10 @@ test('staff need an open shift and can only advance orders through the kitchen w
   const shift=(await db.query('select start_staff_shift() result')).rows[0].result;
   assert.equal(shift.status,'open');
   assert.equal((await db.query('select start_staff_shift() result')).rows[0].result.id,shift.id);
+  const signalBefore=Number((await db.query("select revision from staff_order_signals where restaurant_id='sweezypop'")).rows[0].revision);
   const order=await place(randomUUID(),[{id:'drink',quantity:1}],'menu','staff-flow-client-0001');
+  const signalAfter=Number((await db.query("select revision from staff_order_signals where restaurant_id='sweezypop'")).rows[0].revision);
+  assert.ok(signalAfter>signalBefore);
   const board=(await db.query('select get_staff_order_board() result')).rows[0].result;
   assert.ok(board.some(row=>row.id===order.id));
   for(const [from,to] of [['new','preparing'],['preparing','ready'],['ready','done']]) {
