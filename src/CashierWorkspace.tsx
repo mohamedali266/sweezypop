@@ -106,9 +106,12 @@ export function CashierWorkspace(props: {
       knownReady.current=new Set(next.orders.filter(order=>order.status==='ready').map(order=>order.id));
       if (!initial && initialLoaded.current && freshReady.length) {
         playAlert();
-        if ('Notification' in window && Notification.permission==='granted' && document.hidden) {
+        if ('Notification' in window && Notification.permission==='granted' && document.hidden && 'serviceWorker' in navigator) {
           const first=freshReady[0];
-          new Notification(locale==='de'?`Bestellung #${first.orderNumber} ist fertig`:`Order #${first.orderNumber} is ready`, { body:first.customerName, icon:logoUrl||'/pwa-icon-192.png', tag:`cashier-ready-${first.id}` });
+          void navigator.serviceWorker.ready.then(registration=>registration.showNotification(
+            locale==='de'?`Bestellung #${first.orderNumber} ist fertig`:`Order #${first.orderNumber} is ready`,
+            { body:first.customerName, icon:logoUrl||'/pwa-icon-192.png', badge:'/pwa-icon-192.png', tag:`cashier-ready-${first.id}` },
+          ));
         }
       }
       initialLoaded.current=true;
