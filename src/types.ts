@@ -1,6 +1,6 @@
 export type Locale = 'en' | 'de';
 export type MenuLayout = 'grid' | 'list';
-export type UserRole = 'admin' | 'owner' | 'staff';
+export type UserRole = 'admin' | 'owner' | 'staff' | 'cashier';
 export type OrderStatus = 'new' | 'accepted' | 'preparing' | 'ready' | 'done' | 'cancelled';
 
 export interface ItemPreparation {
@@ -76,6 +76,37 @@ export interface StaffDirectoryEntry {
   restaurant: string;
   currentShift?: StaffShift;
   recentShifts: StaffShift[];
+  role?: 'staff' | 'cashier';
+}
+
+export interface CashierShift {
+  id: string;
+  status: 'open' | 'closed' | 'force_closed';
+  cashierProfileId: string;
+  cashierName: string;
+  startedAt: string;
+  endedAt?: string;
+  openingBalance: number;
+  salesTotal: number;
+  transfersTotal: number;
+  expectedCash: number;
+}
+
+export interface CashTransfer {
+  id: string;
+  shiftId: string;
+  employeeName: string;
+  amount: number;
+  createdAt: string;
+}
+
+export interface CashierSummary {
+  shift: CashierShift | null;
+  completedToday: number;
+  revenueToday: number;
+  cancelledToday: number;
+  activeOrders: number;
+  transfers: CashTransfer[];
 }
 
 export interface StaffGuide {

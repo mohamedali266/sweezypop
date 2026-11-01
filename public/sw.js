@@ -1,6 +1,6 @@
 /* global self, caches, fetch, URL, Response */
 
-const CACHE_NAME = 'sweezypop-static-v4';
+const CACHE_NAME = 'sweezypop-static-v5';
 const CORE_ASSETS = [
   '/',
   '/pwa-icon.svg',
@@ -10,6 +10,7 @@ const CORE_ASSETS = [
   '/order-received.gif',
   '/order-preparing.gif',
   '/order-ready.gif',
+  '/notification.mp3',
   '/flags/de.svg',
   '/flags/gb.svg',
 ];

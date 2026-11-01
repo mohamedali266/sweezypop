@@ -8,14 +8,14 @@ const copy = {
   de: {
     title:'Team & Schichten', subtitle:'Mitarbeiterstatus, Stationen und Schichtverlauf verwalten.', refresh:'Aktualisieren',
     active:'Aktiv', inactive:'Inaktiv', onShift:'Im Dienst', offShift:'Nicht im Dienst', name:'Name', email:'Anmeldung',
-    station:'Station', save:'Speichern', saving:'Speichert …', recent:'Letzte Schichten', noShifts:'Noch keine Schichten',
+    station:'Station', save:'Speichern', saving:'Speichert …', recent:'Letzte Schichten', noShifts:'Noch keine Schichten', cashier:'Kasse', kitchen:'Küche',
     started:'Beginn', ended:'Ende', open:'Läuft', handled:'Bestellungen', loadFailed:'Teamdaten konnten nicht geladen werden.',
     saveFailed:'Änderung konnte nicht gespeichert werden.', saved:'Änderungen gespeichert.', ownerNotice:'Neue Mitarbeiterkonten werden ausschließlich von einem Administrator erstellt.',
   },
   en: {
     title:'Staff & shifts', subtitle:'Manage staff availability, stations, and shift history.', refresh:'Refresh',
     active:'Active', inactive:'Inactive', onShift:'On shift', offShift:'Off shift', name:'Name', email:'Login',
-    station:'Station', save:'Save', saving:'Saving …', recent:'Recent shifts', noShifts:'No shifts yet',
+    station:'Station', save:'Save', saving:'Saving …', recent:'Recent shifts', noShifts:'No shifts yet', cashier:'Cashier', kitchen:'Kitchen',
     started:'Started', ended:'Ended', open:'Open', handled:'Orders', loadFailed:'Staff data could not be loaded.',
     saveFailed:'The change could not be saved.', saved:'Changes saved.', ownerNotice:'New staff accounts can only be created by an administrator.',
   },
@@ -64,7 +64,7 @@ export function StaffManagement({ locale, isAdmin }: { locale:Locale; isAdmin:bo
       {staff.map(member=><article className="staff-member" key={member.id}>
         <header>
           <span className={member.active?'active':'inactive'}>{member.active?<UserRoundCheck/>:<UserRoundX/>}</span>
-          <div><strong>{member.name}</strong><small>{member.email}</small></div>
+          <div><strong>{member.name}</strong><small>{member.email} · {member.role==='cashier'?text.cashier:text.kitchen}</small></div>
           <span className={`shift-state ${member.currentShift?'on':''}`}>{member.currentShift?text.onShift:text.offShift}</span>
         </header>
         <div className="staff-member-fields">

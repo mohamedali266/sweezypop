@@ -26,7 +26,7 @@ Deno.serve(async (request) => {
 
   try {
     const { client, profile } = await getRequesterProfile(request);
-    if (profile.must_change_password || !['admin', 'owner', 'staff'].includes(profile.role)) throw new Error('Access denied');
+    if (profile.must_change_password || !['admin', 'owner', 'staff', 'cashier'].includes(profile.role)) throw new Error('Access denied');
     const body = await request.json();
     const orderId = String(body.orderId || '').trim();
     if (!orderId || orderId.length > 120) return jsonResponse({ error:'Invalid order' }, 400);

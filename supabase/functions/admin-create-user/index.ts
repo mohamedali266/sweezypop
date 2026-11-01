@@ -9,7 +9,7 @@ Deno.serve(async (request) => {
     const body = await request.json();
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
-    const role = body.role === 'admin' || body.role === 'staff' ? body.role : 'owner';
+    const role = body.role === 'admin' || body.role === 'staff' || body.role === 'cashier' ? body.role : 'owner';
     const station = String(body.station || 'all').trim();
     const restaurantName = String(body.restaurant || adminProfile.restaurant_name || '').trim();
     const active = body.active !== false;

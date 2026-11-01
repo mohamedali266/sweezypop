@@ -13,16 +13,17 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
 const owner='00000000-0000-4000-8000-000000000002';
 const staff='00000000-0000-4000-8000-000000000003';
-await db.exec(`insert into auth.users values ('${admin}'),('${owner}'),('${staff}');
+const cashier='00000000-0000-4000-8000-000000000004';
+await db.exec(`insert into auth.users values ('${admin}'),('${owner}'),('${staff}'),('${cashier}');
 insert into profiles(id,auth_user_id,restaurant_id,name,email,role) values
 ('admin','${admin}','sweezypop','Admin','admin@test.test','admin'),('owner','${owner}','sweezypop','Owner','owner@test.test','owner'),
-('staff','${staff}','sweezypop','Kitchen','staff@test.test','staff');
+('staff','${staff}','sweezypop','Kitchen','staff@test.test','staff'),('cashier','${cashier}','sweezypop','Mia Cashier','cashier@test.test','cashier');
 insert into categories(id,restaurant_id,name_en,name_de) values ('food','sweezypop','Food','Speisen'),('offers','sweezypop','Offers','Angebote');
 insert into menu_items(id,restaurant_id,category_id,name_en,name_de,price) values ('cake','sweezypop','food','Cake','Kuchen',6.50),('drink','sweezypop','food','Drink','Getränk',3);
 insert into menu_items(id,restaurant_id,category_id,name_en,name_de,price,included_item_ids) values ('combo','sweezypop','offers','Combo','Kombi',8,array['cake','drink']);`);
@@ -175,6 +176,45 @@ test('owners can edit existing staff but cannot change roles or create profiles'
   const changed=(await db.query("select name,station,role from profiles where id='staff'")).rows[0];
   assert.deepEqual(changed,{name:'Prep',station:'drinks',role:'staff'});
   await assert.rejects(db.query("select save_profile_changes('sweezypop','[]')"),/Access denied/);
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+});
+test('cashier register uses trusted sales, immutable partial transfers and carries the closing balance',async () => {
+  await db.query("select set_config('test.uid',$1,false)",[cashier]);
+  await assert.rejects(db.query('select get_cashier_workspace()'),/Open register required/);
+  const opened=(await db.query('select open_cashier_shift() result')).rows[0].result;
+  assert.equal(Number(opened.opening_balance),0);
+  const sale=await place(randomUUID(),[{id:'drink',quantity:2}],'pos');
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  await db.query("select set_order_status($1,'new','preparing')",[sale.id]);
+  await db.query("select set_order_status($1,'preparing','ready')",[sale.id]);
+  await db.query("select set_config('test.uid',$1,false)",[cashier]);
+  await db.query("select set_cashier_order_status($1,'ready','done')",[sale.id]);
+  let workspace=(await db.query('select get_cashier_workspace() result')).rows[0].result;
+  assert.equal(Number(workspace.shift.sales_total),6);
+  assert.equal(Number(workspace.shift.expected_cash),6);
+  const transfer=(await db.query('select create_cash_transfer(2.50) result')).rows[0].result;
+  assert.equal(transfer.transfer.employee_name,'Mia Cashier');
+  assert.ok(transfer.transfer.created_at);
+  assert.equal(Number(transfer.shift.expected_cash),3.5);
+  await db.exec('set role authenticated');
+  try {
+    await assert.rejects(db.query('update cash_transfers set amount=1'),/permission denied/);
+    await assert.rejects(db.query('delete from cash_transfers'),/permission denied/);
+  } finally { await db.exec('reset role'); }
+  const closed=(await db.query('select close_cashier_shift() result')).rows[0].result;
+  assert.equal(Number(closed.expected_cash),3.5);
+  assert.equal(Number((await db.query('select get_cashier_opening_balance() balance')).rows[0].balance),3.5);
+  const reopened=(await db.query('select open_cashier_shift() result')).rows[0].result;
+  assert.equal(Number(reopened.opening_balance),3.5);
+  workspace=(await db.query('select get_cashier_workspace() result')).rows[0].result;
+  assert.equal(Number(workspace.shift.expected_cash),3.5);
+  const cancelled=await place(randomUUID(),[{id:'drink',quantity:1}],'pos');
+  await db.query("select set_cashier_order_status($1,'new','cancelled')",[cancelled.id]);
+  workspace=(await db.query('select get_cashier_workspace() result')).rows[0].result;
+  assert.equal(Number(workspace.shift.sales_total),0);
+  assert.equal(Number(workspace.shift.expected_cash),3.5);
+  await db.query('select create_cash_transfer(3.50)');
+  await db.query('select close_cashier_shift()');
   await db.query("select set_config('test.uid',$1,false)",[admin]);
 });
 test('catalog writes are targeted, optimistic and atomic',async () => {

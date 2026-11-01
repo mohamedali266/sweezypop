@@ -30,7 +30,7 @@ create table if not exists profiles (
   restaurant_id text references restaurants(id) on delete cascade,
   name text not null,
   email text unique not null,
-  role text not null check (role in ('admin', 'owner', 'staff')),
+  role text not null check (role in ('admin', 'owner', 'staff', 'cashier')),
   station text not null default 'all',
   restaurant_name text,
   active boolean default true,
@@ -133,6 +133,36 @@ create table if not exists staff_shifts (
   constraint staff_shift_end_consistency check (
     (status = 'open' and ended_at is null) or (status <> 'open' and ended_at is not null)
   )
+);
+
+create table if not exists cashier_shifts (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id text not null references restaurants(id) on delete cascade,
+  cashier_profile_id text not null references profiles(id) on delete restrict,
+  auth_user_id uuid not null,
+  cashier_name text not null,
+  status text not null default 'open' check (status in ('open','closed','force_closed')),
+  opening_balance numeric(12,2) not null default 0 check (opening_balance >= 0),
+  sales_total numeric(12,2) not null default 0 check (sales_total >= 0),
+  transfers_total numeric(12,2) not null default 0 check (transfers_total >= 0),
+  closing_balance numeric(12,2) check (closing_balance is null or closing_balance >= 0),
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  ended_by uuid,
+  constraint cashier_shift_end_consistency check (
+    (status = 'open' and ended_at is null and closing_balance is null)
+    or (status <> 'open' and ended_at is not null and closing_balance is not null)
+  )
+);
+
+create table if not exists cash_transfers (
+  id uuid primary key default gen_random_uuid(),
+  shift_id uuid not null references cashier_shifts(id) on delete restrict,
+  restaurant_id text not null references restaurants(id) on delete restrict,
+  cashier_profile_id text not null references profiles(id) on delete restrict,
+  employee_name text not null,
+  amount numeric(12,2) not null check (amount > 0),
+  created_at timestamptz not null default now()
 );
 
 create table if not exists staff_guides (

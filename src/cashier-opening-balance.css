@@ -1,0 +1,30 @@
+.cashier-opening-balance {
+  align-items: center;
+  background: #f7f4f8;
+  border: 1px solid #e8dfec;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  margin: 24px 0 4px;
+  padding: 16px;
+  text-align: left;
+}
+
+.cashier-opening-balance span {
+  color: #776d80;
+  font-size: 13px;
+}
+
+.cashier-opening-balance strong {
+  font-size: 23px;
+}
+
+@media (max-width: 800px) {
+  .cashier-topbar {
+    position: relative;
+  }
+
+  .cashier-tabs {
+    top: 0;
+  }
+}

@@ -7,6 +7,7 @@ import { OrdersWorkspace } from './OrdersWorkspace';
 import { StaffManagement } from './StaffManagement';
 import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
+import { CashierWorkspace } from './CashierWorkspace';
 import { OrderJourney } from './OrderJourney';
 import { FooterManager, MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
@@ -69,7 +70,7 @@ import {
 import { isSupabaseConfigured, supabase } from './supabase';
 import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
 
-type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'password-change';
+type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'cashier' | 'password-change';
 type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'footer' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
@@ -899,7 +900,7 @@ function AppContent() {
           onDismiss={dismissInstallBanner}
         />
       )}
-      {view !== 'staff' && <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />}
+      {view !== 'staff' && view !== 'cashier' && <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />}
       {(loadError || (authRole && saveMessage)) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
       {!isSupabaseConfigured && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
       {view === 'staff' && authRole === 'staff' && authProfile ? (
@@ -909,6 +910,19 @@ function AppContent() {
           logoUrl={theme.logoUrl}
           staffName={authProfile.name}
           restaurantId={authProfile.restaurantId}
+          onToggleLocale={() => setLocale(locale === 'de' ? 'en' : 'de')}
+          onLogout={handleLogout}
+        />
+      ) : view === 'cashier' && authRole === 'cashier' && authProfile ? (
+        <CashierWorkspace
+          locale={locale}
+          siteName={theme.siteName}
+          logoUrl={theme.logoUrl}
+          cashierName={authProfile.name}
+          restaurantId={authProfile.restaurantId}
+          items={items}
+          categories={categories}
+          theme={theme}
           onToggleLocale={() => setLocale(locale === 'de' ? 'en' : 'de')}
           onLogout={handleLogout}
         />
@@ -3085,6 +3099,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
               <option value="owner">{t(locale, 'owner')}</option>
               <option value="admin">{t(locale, 'admin')}</option>
               <option value="staff">Staff</option>
+              <option value="cashier">Cashier</option>
             </select>
             <input value={user.restaurant} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, restaurant: event.target.value } : current)))} />
             <input value={user.station || 'all'} onChange={(event) => setUsers(users.map((current) => (current.id === user.id ? { ...current, station: event.target.value } : current)))} />
@@ -3128,6 +3143,7 @@ function UsersManager({ locale, users, setUsers }: { locale: Locale; users: AppU
                   <option value="owner">{t(locale, 'owner')}</option>
                   <option value="admin">{t(locale, 'admin')}</option>
                   <option value="staff">Staff</option>
+                  <option value="cashier">Cashier</option>
                 </select>
               </label>
               <label>

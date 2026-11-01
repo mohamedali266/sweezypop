@@ -234,37 +234,29 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
   const [now, setNow] = useState(Date.now());
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialBoardLoaded = useRef(false);
-  const audioContext = useRef<AudioContext | null>(null);
+  const alertAudio = useRef<HTMLAudioElement | null>(null);
   const mounted = useRef(true);
   const boardRefreshInFlight = useRef(false);
   const endShiftTrigger = useRef<HTMLButtonElement | null>(null);
   const endDialogClose = useRef<HTMLButtonElement | null>(null);
 
   const unlockAudio = useCallback(async () => {
-    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return false;
-    if (!audioContext.current) audioContext.current = new AudioContextClass();
-    if (audioContext.current.state === 'suspended') await audioContext.current.resume();
-    return audioContext.current.state === 'running';
+    if (!alertAudio.current) {
+      alertAudio.current = new Audio('/notification.mp3');
+      alertAudio.current.preload = 'auto';
+      alertAudio.current.volume = 0.95;
+    }
+    await alertAudio.current.play();
+    alertAudio.current.pause();
+    alertAudio.current.currentTime = 0;
+    return true;
   }, []);
 
   const playNewOrderSound = useCallback(() => {
-    const context = audioContext.current;
-    if (!context || context.state !== 'running') return;
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.28, context.currentTime + 0.03);
-    gain.gain.setValueAtTime(0.24, context.currentTime + 0.72);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 1.18);
-    gain.connect(context.destination);
-    [0, 0.32, 0.67].forEach((offset, index) => {
-      const oscillator = context.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = [620, 740, 880][index];
-      oscillator.connect(gain);
-      oscillator.start(context.currentTime + offset);
-      oscillator.stop(context.currentTime + offset + 0.32);
-    });
+    const audio = alertAudio.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play().catch(() => setShowSoundPrompt(true));
   }, []);
 
   const refreshBoard = useCallback(async (initial = false) => {
@@ -313,7 +305,10 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
         if (mounted.current) setLoading(false);
       }
     })();
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      alertAudio.current?.pause();
+    };
   }, [refreshBoard, text.loadFailed]);
 
   useEffect(() => {

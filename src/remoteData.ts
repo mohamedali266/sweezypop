@@ -1,4 +1,4 @@
-import type { AppUser, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -725,6 +725,90 @@ export function subscribeToStaffOrders(
   };
 }
 
+function cashierShiftFromRow(value: Record<string, unknown>): CashierShift {
+  return {
+    id:String(value.id),
+    status:String(value.status) as CashierShift['status'],
+    cashierProfileId:String(value.cashier_profile_id),
+    cashierName:String(value.cashier_name || ''),
+    startedAt:String(value.started_at),
+    endedAt:value.ended_at ? String(value.ended_at) : undefined,
+    openingBalance:Number(value.opening_balance || 0),
+    salesTotal:Number(value.sales_total || 0),
+    transfersTotal:Number(value.transfers_total || 0),
+    expectedCash:Number(value.expected_cash || 0),
+  };
+}
+
+function cashTransferFromRow(value: Record<string, unknown>): CashTransfer {
+  return {
+    id:String(value.id), shiftId:String(value.shift_id), employeeName:String(value.employee_name || ''),
+    amount:Number(value.amount || 0), createdAt:String(value.created_at),
+  };
+}
+
+export async function loadCurrentCashierShift(): Promise<CashierShift | null> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_current_cashier_shift');
+  if (error) throw error;
+  return data ? cashierShiftFromRow(data as Record<string,unknown>) : null;
+}
+
+export async function loadCashierOpeningBalance(): Promise<number> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_cashier_opening_balance');
+  if (error) throw error;
+  return Number(data || 0);
+}
+
+export async function openCashierShift(): Promise<CashierShift> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('open_cashier_shift');
+  if (error) throw error;
+  return cashierShiftFromRow(data as Record<string,unknown>);
+}
+
+export async function loadCashierWorkspace(): Promise<{ summary: CashierSummary; orders: StaffBoardOrder[] }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('get_cashier_workspace');
+  if (error) throw error;
+  const value = data as Record<string,unknown>;
+  return {
+    summary: {
+      shift:cashierShiftFromRow(value.shift as Record<string,unknown>),
+      completedToday:Number(value.completed_today || 0), revenueToday:Number(value.revenue_today || 0),
+      cancelledToday:Number(value.cancelled_today || 0), activeOrders:Number(value.active_orders || 0),
+      transfers:((value.transfers || []) as Array<Record<string,unknown>>).map(cashTransferFromRow),
+    },
+    orders:((value.orders || []) as DbOrder[]).map(row => ({
+      ...orderFromRow(row), acceptedAt:row.accepted_at, preparingAt:row.preparing_at, readyAt:row.ready_at,
+    })),
+  };
+}
+
+export async function createCashTransfer(amount: number): Promise<{ shift: CashierShift; transfer: CashTransfer }> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('create_cash_transfer', { p_amount:amount });
+  if (error) throw error;
+  const value = data as Record<string,unknown>;
+  return { shift:cashierShiftFromRow(value.shift as Record<string,unknown>), transfer:cashTransferFromRow(value.transfer as Record<string,unknown>) };
+}
+
+export async function closeCashierShift(): Promise<CashierShift> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('close_cashier_shift');
+  if (error) throw error;
+  return cashierShiftFromRow(data as Record<string,unknown>);
+}
+
+export async function updateCashierOrderStatus(order: StaffBoardOrder, status: Order['status']) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('set_cashier_order_status', { p_id:order.id, p_expected:order.status, p_status:status });
+  if (error) throw error;
+  void supabase.functions.invoke('send-order-push', { body:{ orderId:order.id } }).catch(() => undefined);
+  return data as { id:string; status:Order['status'] };
+}
+
 export async function loadStaffDirectory(): Promise<StaffDirectoryEntry[]> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { data, error } = await supabase.rpc('get_staff_directory');
@@ -739,6 +823,7 @@ export async function loadStaffDirectory(): Promise<StaffDirectoryEntry[]> {
     restaurant:String(entry.restaurant_name || ''),
     currentShift:entry.current_shift ? shiftFromRow(entry.current_shift as Record<string,unknown>) : undefined,
     recentShifts:((entry.recent_shifts || []) as Array<Record<string,unknown>>).map(shiftFromRow),
+    role:entry.role === 'cashier' ? 'cashier' : 'staff',
   }));
 }
 
