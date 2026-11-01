@@ -612,6 +612,12 @@ button {
 .contact-icon-button.whatsapp {
   background: #25d366;
 }
+.contact-icon-button.whatsapp img { width: 20px; height: 20px; filter: brightness(0) invert(1); }
+.menu-notification-prompt { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:14px 0; padding:14px 16px; border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px; background:var(--surface); }
+.menu-notification-prompt > div { display:grid; gap:3px; }
+.menu-notification-prompt span { color:var(--muted); font-size:.82rem; line-height:1.4; }
+.menu-notification-prompt button { min-height:42px; padding:0 15px; border:0; border-radius:7px; color:var(--button-text); background:var(--accent); font-weight:850; white-space:nowrap; }
+@media (max-width: 620px) { .menu-notification-prompt { align-items:stretch; flex-direction:column; margin-inline:14px; } .menu-notification-prompt button { width:100%; } }
 
 .social-modal-card {
   width: min(560px, calc(100vw - 32px));
@@ -1674,7 +1680,7 @@ button {
 }
 
 .item-row {
-  grid-template-columns: auto 64px minmax(180px, 1fr) minmax(140px, 0.7fr) 110px auto auto;
+  grid-template-columns: auto 64px minmax(180px, 1fr) minmax(140px, 0.7fr) 110px auto auto auto;
   background: linear-gradient(135deg, #ffffff, #fbf8ff);
   border: 1px solid var(--border);
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;

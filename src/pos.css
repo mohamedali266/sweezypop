@@ -160,7 +160,7 @@
 .pos button:disabled { opacity: .45; cursor: not-allowed; }
 .pos-empty { padding: 34px 12px; color: var(--pos-muted); text-align: center; }
 .receipt-button,.receipt-actions button { display:inline-flex; align-items:center; gap:8px; padding:9px 12px; background:#fff; border:1px solid #d5d9d7; border-radius:5px; color:#24382d; }
-.receipt-overlay { position:fixed; inset:0; z-index:10000; background:#17151e80; display:grid; place-items:center; padding:16px; }
+.receipt-overlay { position:fixed; inset:0; z-index:10040; background:#17151e80; display:grid; place-items:center; padding:16px; }
 .receipt-dialog { width:min(600px,100%); max-height:90dvh; overflow:auto; background:#f4f5f4; color:#181c19; padding:20px; border-radius:8px; }
 .receipt-dialog header,.receipt-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
 .receipt-actions label { font-size:14px; }

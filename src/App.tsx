@@ -20,6 +20,7 @@ import {
   Copyright,
   CircleUserRound,
   Download,
+  Edit3,
   FileSpreadsheet,
   GripVertical,
   Image,
@@ -55,6 +56,7 @@ import {
   deleteAdminUser,
   createRemoteOrder,
   loadRemoteState,
+  registerOrderPush,
   resetAdminUserPassword,
   saveRemoteState,
   saveRemoteSiteSettings,
@@ -77,6 +79,12 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const currency = euro;
+const vapidPublicKey = 'BDe3QvPdBZho8ZTk-7kai0luVGllvaZ-cicmALSi052rBa_8BBT4PbCZOiTvkzT30l0AqNDPsQdpphs9zDq3Ox4';
+function applicationServerKey(value: string) {
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const decoded = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(decoded, character => character.charCodeAt(0));
+}
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers' || Boolean(item.includedItemIds?.length);
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
 const socialPlatformOptions = [
@@ -287,7 +295,7 @@ function AppContent() {
   const [orderJourneyExpanded, setOrderJourneyExpanded] = useState(() => Boolean(loadActiveOrder()));
   const [trackingConnection, setTrackingConnection] = useState<'live' | 'checking' | 'offline'>('checking');
   const [orderStatusNotice, setOrderStatusNotice] = useState('');
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => 'Notification' in window && Notification.permission === 'granted');
   const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
@@ -364,7 +372,16 @@ function AppContent() {
       if ('Notification' in window && Notification.permission === 'default') {
         browserNotificationsReady = (await Notification.requestPermission()) === 'granted';
       }
-      setNotificationsEnabled(audioReady || browserNotificationsReady);
+      let pushReady = false;
+      if (browserNotificationsReady && 'serviceWorker' in navigator && 'PushManager' in window) {
+        const registration = await navigator.serviceWorker.ready;
+        const existing = await registration.pushManager.getSubscription();
+        const subscription = existing || await registration.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:applicationServerKey(vapidPublicKey) });
+        const current = trackedOrderRef.current;
+        if (current) await registerOrderPush(current, subscription, locale);
+        pushReady = true;
+      }
+      setNotificationsEnabled(pushReady);
       if (audioReady) playOrderTone(false);
     } finally {
       setNotificationPromptBusy(false);
@@ -433,40 +450,16 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const isDashboardManifest = Boolean(authRole);
-    const manifest = {
-      name: isDashboardManifest ? `${theme.siteName} Dashboard` : `${theme.siteName} Menu`,
-      short_name: theme.siteName.slice(0, 12) || 'Sweezypop',
-      description: isDashboardManifest ? 'Restaurant dashboard and ordering workspace.' : 'Restaurant menu and live order tracking.',
-      start_url: isDashboardManifest ? '/#login' : '/',
-      scope: '/',
-      display: 'standalone',
-      background_color: theme.background,
-      theme_color: theme.primary,
-      icons: [
-        { src: theme.logoUrl || '/pwa-icon.svg', sizes: '192x192', type: theme.logoUrl ? undefined : 'image/svg+xml', purpose: 'any maskable' },
-        { src: theme.logoUrl || '/pwa-icon.svg', sizes: '512x512', type: theme.logoUrl ? undefined : 'image/svg+xml', purpose: 'any maskable' },
-      ],
-    };
-    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-    const manifestUrl = URL.createObjectURL(blob);
-    let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-    if (!manifestLink) {
-      manifestLink = document.createElement('link');
-      manifestLink.rel = 'manifest';
-      document.head.appendChild(manifestLink);
-    }
-    manifestLink.href = manifestUrl;
+    document.title = `${theme.siteName} ${authRole ? 'Dashboard' : 'Menu'}`;
     let appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
     if (!appleIcon) {
       appleIcon = document.createElement('link');
       appleIcon.rel = 'apple-touch-icon';
       document.head.appendChild(appleIcon);
     }
-    appleIcon.href = theme.logoUrl || '/pwa-icon.svg';
+    appleIcon.href = theme.logoUrl || '/pwa-icon-192.png';
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.primary);
-    return () => URL.revokeObjectURL(manifestUrl);
-  }, [authRole, theme.background, theme.logoUrl, theme.primary, theme.siteName]);
+  }, [authRole, theme.logoUrl, theme.primary, theme.siteName]);
 
   useEffect(() => {
     const standalone = window.matchMedia('(display-mode: standalone)').matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
@@ -486,6 +479,8 @@ function AppContent() {
       setInstallPrompt(null);
     };
 
+    const deferred = (window as Window & { __sweezypopInstallPrompt?: BeforeInstallPromptEvent }).__sweezypopInstallPrompt;
+    if (deferred) onBeforeInstallPrompt(deferred);
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
     window.addEventListener('appinstalled', onInstalled);
     return () => {
@@ -493,6 +488,17 @@ function AppContent() {
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, [authRole, view]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || Notification.permission !== 'granted') {
+      setNotificationsEnabled(false);
+      return;
+    }
+    navigator.serviceWorker.ready
+      .then(registration => registration.pushManager.getSubscription())
+      .then(subscription => setNotificationsEnabled(Boolean(subscription)))
+      .catch(() => setNotificationsEnabled(false));
+  }, []);
 
   useEffect(() => {
     if ((authRole || view === 'menu') && !isStandalone) {
@@ -785,6 +791,17 @@ function AppContent() {
       setTrackedOrder(order);
       setTrackingConnection('live');
       setOrderJourneyExpanded(true);
+      if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        void navigator.serviceWorker.ready
+          .then(registration => registration.pushManager.getSubscription())
+          .then(async subscription => {
+            if (!subscription) return false;
+            await registerOrderPush(order, subscription, locale);
+            return true;
+          })
+          .then(setNotificationsEnabled)
+          .catch(() => setNotificationsEnabled(false));
+      }
       requestAttempt.current = null;
     } finally { orderInFlight.current = false; }
   };
@@ -1283,6 +1300,13 @@ function MenuPage(props: {
 
       <ContactStrip locale={props.locale} theme={props.theme} />
 
+      {!props.notificationsEnabled && !props.trackedOrder && (
+        <section className="menu-notification-prompt" role="status">
+          <div><strong>{props.locale === 'de' ? 'Bestellstatus nicht verpassen' : 'Never miss an order update'}</strong><span>{props.locale === 'de' ? 'Aktiviere Benachrichtigungen für Statusänderungen, auch wenn die App im Hintergrund ist.' : 'Enable notifications for status changes, including while the app is in the background.'}</span></div>
+          <button type="button" disabled={props.notificationPromptBusy} onClick={props.enableOrderNotifications}>{props.notificationPromptBusy ? (props.locale === 'de' ? 'Wird aktiviert …' : 'Enabling …') : (props.locale === 'de' ? 'Aktivieren' : 'Enable')}</button>
+        </section>
+      )}
+
       <section className="menu-tools">
         <label className="search-box">
           <Search size={18} />
@@ -1380,7 +1404,7 @@ function ContactStrip({ locale, theme }: { locale: Locale; theme: ThemeSettings 
               <PhoneCall size={18} />
             </a>
             <a className="contact-icon-button whatsapp" href={whatsappHref} target="_blank" rel="noreferrer" aria-label={t(locale, 'openWhatsapp')}>
-              <MessageCircle size={18} />
+              <img src="/social-icons/whatsapp.svg" alt="" aria-hidden="true" />
             </a>
           </div>
         </div>
@@ -2123,6 +2147,7 @@ function ItemsManager({
   importItemsFromExcel: (file: File) => Promise<void>;
 }) {
   const [formOpen, setFormOpen] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [preparationItem, setPreparationItem] = useState<MenuItem | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -2139,6 +2164,29 @@ function ItemsManager({
     available: true,
   });
   const [formError, setFormError] = useState('');
+
+  const emptyItemForm = () => ({
+    nameEn: '', nameDe: '', descriptionEn: '', descriptionDe: '', categoryId: categories[0]?.id || '',
+    imageUrl: '', price: '', badgeEn: '', badgeDe: '', imageStyle: 'pink', available: true,
+  });
+
+  const openCreateItem = () => {
+    setEditingItemId(null);
+    setForm(emptyItemForm());
+    setFormError('');
+    setFormOpen(true);
+  };
+
+  const openEditItem = (item: MenuItem) => {
+    setEditingItemId(item.id);
+    setForm({
+      nameEn:item.name.en, nameDe:item.name.de, descriptionEn:item.description.en, descriptionDe:item.description.de,
+      categoryId:item.categoryId, imageUrl:item.imageUrl || '', price:String(item.price), badgeEn:item.badge?.en || '',
+      badgeDe:item.badge?.de || '', imageStyle:item.imageStyle, available:item.available,
+    });
+    setFormError('');
+    setFormOpen(true);
+  };
 
   const badgePresets = [
     { en: '', de: '', label: t(locale, 'noBadge') },
@@ -2171,7 +2219,7 @@ function ItemsManager({
   };
 
   const handleImageFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2_000_000) {
       setFormError(t(locale, 'imageFileRequired'));
       return;
     }
@@ -2196,8 +2244,9 @@ function ItemsManager({
       return;
     }
 
+    const previous = editingItemId ? items.find(item => item.id === editingItemId) : undefined;
     const item: MenuItem = {
-      id: `item-${Date.now()}`,
+      id: previous?.id || `item-${Date.now()}`,
       categoryId: form.categoryId,
       name: { en: form.nameEn.trim(), de: form.nameDe.trim() || form.nameEn.trim() },
       description: {
@@ -2209,23 +2258,14 @@ function ItemsManager({
       imageStyle: form.imageStyle,
       imageUrl: form.imageUrl.trim(),
       available: form.available,
-      sortOrder: items.length + 1,
+      sortOrder: previous?.sortOrder || items.length + 1,
+      includedItemIds: previous?.includedItemIds,
+      preparation: previous?.preparation,
     };
 
-    setItems([...items, item]);
-    setForm({
-      nameEn: '',
-      nameDe: '',
-      descriptionEn: '',
-      descriptionDe: '',
-      categoryId: categories[0]?.id || '',
-      imageUrl: '',
-      price: '',
-      badgeEn: '',
-      badgeDe: '',
-      imageStyle: 'pink',
-      available: true,
-    });
+    setItems(previous ? items.map(current => current.id === previous.id ? item : current) : [...items, item]);
+    setForm(emptyItemForm());
+    setEditingItemId(null);
     setFormError('');
     setFormOpen(false);
   };
@@ -2255,7 +2295,7 @@ function ItemsManager({
               }}
             />
           </label>
-          <button className="small-action" onClick={() => setFormOpen(true)}>
+          <button className="small-action" onClick={openCreateItem}>
             <Plus size={16} /> {t(locale, 'addItem')}
           </button>
         </div>
@@ -2293,6 +2333,9 @@ function ItemsManager({
             <button title={locale === 'de' ? 'Zubereitung bearbeiten' : 'Edit preparation'} onClick={() => setPreparationItem(item)}>
               <ChefHat size={16} />
             </button>
+            <button title={locale === 'de' ? 'Artikel und Bild bearbeiten' : 'Edit item and image'} onClick={() => openEditItem(item)}>
+              <Edit3 size={16} />
+            </button>
             <button title={t(locale, 'delete')} onClick={() => setItems(items.filter((current) => current.id !== item.id))}>
               <Trash2 size={16} />
             </button>
@@ -2302,11 +2345,11 @@ function ItemsManager({
 
       {formOpen && (
         <div className="modal-overlay" role="presentation" onClick={() => setFormOpen(false)}>
-          <form className="item-form-card animated-panel" role="dialog" aria-modal="true" aria-label={t(locale, 'addItem')} onClick={(event) => event.stopPropagation()} onSubmit={submitItem}>
+          <form className="item-form-card animated-panel" role="dialog" aria-modal="true" aria-label={editingItemId ? (locale === 'de' ? 'Artikel bearbeiten' : 'Edit item') : t(locale, 'addItem')} onClick={(event) => event.stopPropagation()} onSubmit={submitItem}>
             <div className="section-head">
               <div>
-                <span className="eyebrow dark">{t(locale, 'newMenuItem')}</span>
-                <h2>{t(locale, 'addItem')}</h2>
+                <span className="eyebrow dark">{editingItemId ? (locale === 'de' ? 'Menüartikel' : 'Menu item') : t(locale, 'newMenuItem')}</span>
+                <h2>{editingItemId ? (locale === 'de' ? 'Artikel bearbeiten' : 'Edit item') : t(locale, 'addItem')}</h2>
               </div>
               <button type="button" className="ghost-icon dark" onClick={() => setFormOpen(false)} aria-label={t(locale, 'close')}>
                 x

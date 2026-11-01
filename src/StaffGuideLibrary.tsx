@@ -108,7 +108,7 @@ export function StaffGuideLibrary({ locale }: StaffGuideLibraryProps) {
     {loading ? <div className="sgl__state"><LoaderCircle className="sgl__spin" /></div> : error ? <div className="sgl__error-state" role="alert"><CircleAlertIcon /><strong>{error}</strong><button type="button" onClick={() => void load()}>{text.retry}</button></div> : filtered.length ? <div className="sgl__grid">
       {filtered.map((guide, index) => <button className="sgl-card" type="button" key={guide.id} onClick={() => setSelected(guide)} style={{ '--sgl-index': index } as React.CSSProperties}>
         <span className="sgl-card__number">{String(index + 1).padStart(2, '0')}</span>
-        <span className="sgl-card__icon"><BookOpen /></span>
+        <span className={`sgl-card__icon ${guide.imageUrl ? 'has-image' : ''}`}>{guide.imageUrl ? <img src={guide.imageUrl} alt="" /> : <BookOpen />}</span>
         <span className="sgl-card__copy"><small>{guide.menuItemId ? text.linked : locale === 'de' ? guide.name.en : guide.name.de}</small><strong>{guide.name[locale]}</strong></span>
         <span className="sgl-card__metrics"><span><UtensilsCrossed /><b>{guide.ingredients[locale].length}</b>{text.ingredients}</span><span><ListChecks /><b>{guide.steps[locale].length}</b>{text.steps}</span></span>
         <span className="sgl-card__open">{text.open}<span aria-hidden="true">↗</span></span>
@@ -126,7 +126,7 @@ function GuideDialog({ guide, locale, onClose }: { guide: StaffGuide; locale: Lo
 
   return <div className="sgl-modal" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
     <section ref={dialogRef} className="sgl-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-      <header><div><span><ChefHat />{text.preparation}</span><small>{locale === 'de' ? guide.name.en : guide.name.de}</small><h2 id={titleId}>{guide.name[locale]}</h2></div><button data-autofocus type="button" onClick={onClose} aria-label={text.close}><X /></button></header>
+      <header>{guide.imageUrl && <img className="sgl-dialog__image" src={guide.imageUrl} alt="" />}<div><span><ChefHat />{text.preparation}</span><small>{locale === 'de' ? guide.name.en : guide.name.de}</small><h2 id={titleId}>{guide.name[locale]}</h2></div><button data-autofocus type="button" onClick={onClose} aria-label={text.close}><X /></button></header>
       <div className="sgl-dialog__content">
         <section className="sgl-ingredients"><header><span><UtensilsCrossed /></span><div><h3>{text.ingredients}</h3><small>{guide.ingredients[locale].length}</small></div></header><ul>{guide.ingredients[locale].map((ingredient, index) => <li key={`${ingredient}-${index}`}><Check /><span>{ingredient}</span></li>)}</ul></section>
         <section className="sgl-steps"><header><span><ListChecks /></span><div><h3>{text.steps}</h3><small>{guide.steps[locale].length}</small></div></header><ol>{guide.steps[locale].map((step, index) => <li key={`${step}-${index}`}><strong>{String(index + 1).padStart(2, '0')}</strong><p>{step}</p></li>)}</ol></section>

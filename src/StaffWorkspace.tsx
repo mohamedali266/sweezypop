@@ -253,16 +253,17 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
     if (!context || context.state !== 'running') return;
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.42);
+    gain.gain.exponentialRampToValueAtTime(0.28, context.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.24, context.currentTime + 0.72);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 1.18);
     gain.connect(context.destination);
-    [0, 0.16].forEach((offset, index) => {
+    [0, 0.32, 0.67].forEach((offset, index) => {
       const oscillator = context.createOscillator();
       oscillator.type = 'sine';
-      oscillator.frequency.value = index ? 740 : 620;
+      oscillator.frequency.value = [620, 740, 880][index];
       oscillator.connect(gain);
       oscillator.start(context.currentTime + offset);
-      oscillator.stop(context.currentTime + offset + 0.2);
+      oscillator.stop(context.currentTime + offset + 0.32);
     });
   }, []);
 

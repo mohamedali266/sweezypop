@@ -7,6 +7,7 @@ import {
   ChevronUp,
   CircleAlert,
   Edit3,
+  Image as ImageIcon,
   ListChecks,
   LoaderCircle,
   Plus,
@@ -27,6 +28,7 @@ interface StaffGuideManagementProps {
 
 const emptyInput = (): StaffGuideInput => ({
   menuItemId: undefined,
+  imageUrl: undefined,
   name: { en: '', de: '' },
   ingredients: { en: [], de: [] },
   steps: { en: [], de: [] },
@@ -46,6 +48,7 @@ const copy = {
     deleteTitle: 'Leitfaden löschen?', deleteBody: 'Diese Aktion entfernt den Leitfaden für das gesamte Team.', keep: 'Behalten', confirmDelete: 'Leitfaden löschen',
     saveFailed: 'Der Leitfaden konnte nicht gespeichert werden.', deleteFailed: 'Der Leitfaden konnte nicht gelöscht werden.', loadFailed: 'Die Leitfäden konnten nicht geladen werden.', retry: 'Erneut laden', allReady: 'Vollständig',
     languageComplete: 'Vollständig', languageIncomplete: 'Unvollständig', missingName: 'Name fehlt', missingIngredients: 'Mindestens eine Zutat fehlt', missingSteps: 'Mindestens ein Arbeitsschritt fehlt',
+    image: 'Bild des Leitfadens', uploadImage: 'Bild hochladen', imageHint: 'PNG, JPG, WebP oder GIF bis 1,5 MB', imageInvalid: 'Bitte ein unterstütztes Bild bis 1,5 MB auswählen.', alreadyLinked: 'Für diesen Menüartikel gibt es bereits einen Leitfaden.',
   },
   en: {
     eyebrow: 'Kitchen knowledge', title: 'Preparation guides', subtitle: 'One dependable place for ingredients and clear preparation workflows.',
@@ -60,12 +63,14 @@ const copy = {
     deleteTitle: 'Delete this guide?', deleteBody: 'This will remove the guide for the entire team.', keep: 'Keep guide', confirmDelete: 'Delete guide',
     saveFailed: 'The guide could not be saved.', deleteFailed: 'The guide could not be deleted.', loadFailed: 'The guides could not be loaded.', retry: 'Try again', allReady: 'Complete',
     languageComplete: 'Complete', languageIncomplete: 'Incomplete', missingName: 'Name is missing', missingIngredients: 'Add at least one ingredient', missingSteps: 'Add at least one preparation step',
+    image: 'Guide image', uploadImage: 'Upload image', imageHint: 'PNG, JPG, WebP or GIF up to 1.5 MB', imageInvalid: 'Choose a supported image up to 1.5 MB.', alreadyLinked: 'This menu item already has a preparation guide.',
   },
 } as const;
 
 function cloneGuide(guide: StaffGuide): StaffGuideInput {
   return {
     menuItemId: guide.menuItemId,
+    imageUrl: guide.imageUrl,
     name: { ...guide.name },
     ingredients: { en: [...guide.ingredients.en], de: [...guide.ingredients.de] },
     steps: { en: [...guide.steps.en], de: [...guide.steps.de] },
@@ -215,8 +220,8 @@ export function StaffGuideManagement({ locale, items }: StaffGuideManagementProp
         {filtered.map(guide => {
           const item = menuItems.find(candidate => candidate.id === guide.menuItemId);
           return <article className="sgm-card" key={guide.id}>
-            <div className={`sgm-card__media ${item?.imageUrl ? 'has-image' : ''}`}>
-              {item?.imageUrl ? <img src={item.imageUrl} alt="" /> : <BookOpen aria-hidden="true" />}
+            <div className={`sgm-card__media ${guide.imageUrl || item?.imageUrl ? 'has-image' : ''}`}>
+              {guide.imageUrl || item?.imageUrl ? <img src={guide.imageUrl || item?.imageUrl} alt="" /> : <BookOpen aria-hidden="true" />}
               <span>{guide.menuItemId ? text.linked : text.custom}</span>
             </div>
             <div className="sgm-card__body">
@@ -245,6 +250,7 @@ export function StaffGuideManagement({ locale, items }: StaffGuideManagementProp
       locale={locale}
       guide={editing === 'new' ? null : editing}
       menuItems={menuItems}
+      linkedMenuItemIds={new Set(guides.filter(candidate => candidate.id !== (editing === 'new' ? '' : editing.id)).map(candidate => candidate.menuItemId).filter(Boolean) as string[])}
       busy={busy}
       error={actionError}
       onClose={() => !busy && setEditing(null)}
@@ -260,8 +266,8 @@ export function StaffGuideManagement({ locale, items }: StaffGuideManagementProp
             setGuides(current => current.map(guide => guide.id === updated.id ? updated : guide));
           }
           setEditing(null);
-        } catch {
-          setActionError(text.saveFailed);
+        } catch (error) {
+          setActionError(error instanceof Error && /already has|duplicate|unique/i.test(error.message) ? text.alreadyLinked : text.saveFailed);
         } finally {
           setBusy(false);
         }
@@ -272,10 +278,11 @@ export function StaffGuideManagement({ locale, items }: StaffGuideManagementProp
   </section>;
 }
 
-function GuideEditor({ locale, guide, menuItems, busy, error, onClose, onSave }: {
+function GuideEditor({ locale, guide, menuItems, linkedMenuItemIds, busy, error, onClose, onSave }: {
   locale: Locale;
   guide: StaffGuide | null;
   menuItems: MenuItem[];
+  linkedMenuItemIds: Set<string>;
   busy: boolean;
   error: string;
   onClose: () => void;
@@ -287,6 +294,7 @@ function GuideEditor({ locale, guide, menuItems, busy, error, onClose, onSave }:
   const [ingredient, setIngredient] = useState('');
   const [step, setStep] = useState('');
   const [showValidation, setShowValidation] = useState(false);
+  const [imageError, setImageError] = useState('');
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = `staff-guide-editor-${guide?.id ?? 'new'}`;
   useContainedDialog(dialogRef, onClose, !busy);
@@ -296,6 +304,18 @@ function GuideEditor({ locale, guide, menuItems, busy, error, onClose, onSave }:
   function selectMenuItem(id: string) {
     const item = menuItems.find(candidate => candidate.id === id);
     setDraft(current => ({ ...current, menuItemId: id || undefined, name: item ? { ...item.name } : current.name }));
+  }
+
+  function selectImage(file: File) {
+    setImageError('');
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 1_500_000) {
+      setImageError(text.imageInvalid);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setDraft(current => ({ ...current, imageUrl: String(reader.result || '') || undefined }));
+    reader.onerror = () => setImageError(text.imageInvalid);
+    reader.readAsDataURL(file);
   }
 
   function addTo(field: 'ingredients' | 'steps', value: string, clear: () => void) {
@@ -337,13 +357,19 @@ function GuideEditor({ locale, guide, menuItems, busy, error, onClose, onSave }:
       </header>
       <form onSubmit={submit}>
         <div className="sgm-editor__details">
-          <label className="sgm-field sgm-field--select"><span>{text.selectItem}</span><div><select value={draft.menuItemId ?? ''} onChange={event => selectMenuItem(event.target.value)}><option value="">{text.selectPlaceholder}</option>{menuItems.map(item => <option value={item.id} key={item.id}>{item.name[locale]}</option>)}</select><ChevronDown aria-hidden="true" /></div></label>
+          <label className="sgm-field sgm-field--select"><span>{text.selectItem}</span><div><select value={draft.menuItemId ?? ''} onChange={event => selectMenuItem(event.target.value)}><option value="">{text.selectPlaceholder}</option>{menuItems.map(item => <option value={item.id} key={item.id} disabled={linkedMenuItemIds.has(item.id)}>{item.name[locale]}{linkedMenuItemIds.has(item.id) ? ` · ${text.alreadyLinked}` : ''}</option>)}</select><ChevronDown aria-hidden="true" /></div></label>
           <div className="sgm-editor__language" role="group" aria-label="Language">
             {(['de', 'en'] as Locale[]).map(target => <button type="button" key={target} className={`${language === target ? 'active' : ''} ${complete(target) ? 'complete' : 'incomplete'}`} onClick={() => setLanguage(target)} aria-label={`${target === 'de' ? text.german : text.english}: ${complete(target) ? text.languageComplete : text.languageIncomplete}`}>
               {target.toUpperCase()} {complete(target) ? <Check aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}<span>{target === 'de' ? text.german : text.english}</span>
             </button>)}
           </div>
-          <label className={`sgm-field ${showValidation && !completion[language].name ? 'sgm-field--invalid' : ''}`}><span>{text.customName} · {language.toUpperCase()}</span><input aria-invalid={showValidation && !completion[language].name} value={draft.name[language]} maxLength={160} onChange={event => setDraft(current => ({ ...current, name: { ...current.name, [language]: event.target.value } }))} />{showValidation && !completion[language].name && <small>{text.missingName}</small>}</label>
+          <label className={`sgm-field sgm-field--name ${showValidation && !completion[language].name ? 'sgm-field--invalid' : ''}`}><span>{text.customName} · {language.toUpperCase()}</span><input aria-invalid={showValidation && !completion[language].name} value={draft.name[language]} maxLength={160} onChange={event => setDraft(current => ({ ...current, name: { ...current.name, [language]: event.target.value } }))} />{showValidation && !completion[language].name && <small>{text.missingName}</small>}</label>
+          <div className="sgm-image-field">
+            <div className="sgm-image-field__preview">{draft.imageUrl ? <img src={draft.imageUrl} alt="" /> : <ImageIcon aria-hidden="true" />}</div>
+            <div><strong>{text.image}</strong><small>{imageError || text.imageHint}</small></div>
+            <label className="sgm-image-field__upload"><ImageIcon aria-hidden="true" />{text.uploadImage}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => { const file = event.target.files?.[0]; if (file) selectImage(file); event.currentTarget.value = ''; }} /></label>
+            {draft.imageUrl && <button type="button" className="sgm-image-field__remove" onClick={() => setDraft(current => ({ ...current, imageUrl: undefined }))} aria-label={text.remove}><X /></button>}
+          </div>
         </div>
 
         <div className="sgm-editor__workspace">

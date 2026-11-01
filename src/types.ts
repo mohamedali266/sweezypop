@@ -82,6 +82,7 @@ export interface StaffGuide {
   id: string;
   restaurantId: string;
   menuItemId?: string;
+  imageUrl?: string;
   name: Record<Locale, string>;
   ingredients: Record<Locale, string[]>;
   steps: Record<Locale, string[]>;
@@ -89,7 +90,7 @@ export interface StaffGuide {
   updatedAt: string;
 }
 
-export type StaffGuideInput = Pick<StaffGuide, 'menuItemId' | 'name' | 'ingredients' | 'steps'>;
+export type StaffGuideInput = Pick<StaffGuide, 'menuItemId' | 'imageUrl' | 'name' | 'ingredients' | 'steps'>;
 
 export interface SocialLink {
   id: string;

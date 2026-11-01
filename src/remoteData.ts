@@ -1,4 +1,4 @@
-import type { AppUser, Category, CustomerReview, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -484,10 +484,22 @@ export async function completeTrackedOrder(order: Order, rating: number | null, 
   return { ...order, status: 'done' };
 }
 
+export async function registerOrderPush(order: Order, subscription: PushSubscription, locale: Locale): Promise<void> {
+  if (!supabase || !order.trackingToken) throw new Error('Order tracking is not available.');
+  const { error } = await supabase.rpc('register_order_push', {
+    p_id:order.id,
+    p_tracking_key:order.trackingToken,
+    p_subscription:subscription.toJSON(),
+    p_locale:locale,
+  });
+  if (error) throw error;
+}
+
 export async function updateRemoteOrderStatus(order: Order, status: Order['status']) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.rpc('set_order_status', { p_id:order.id, p_expected:order.status, p_status:status });
   if (error) throw error;
+  void supabase.functions.invoke('send-order-push', { body:{ orderId:order.id } }).catch(() => undefined);
 }
 
 export type OrderScope = 'live' | 'today' | 'history' | 'cancelled' | 'all';
@@ -687,6 +699,7 @@ export async function updateStaffOrderStatus(order: StaffBoardOrder, status: Ord
     p_status:status,
   });
   if (error) throw error;
+  void supabase.functions.invoke('send-order-push', { body:{ orderId:order.id } }).catch(() => undefined);
   return data as { id: string; status: Order['status'] };
 }
 
@@ -745,6 +758,7 @@ function staffGuideFromRow(value: Record<string, unknown>): StaffGuide {
     id: String(value.id),
     restaurantId: String(value.restaurant_id),
     menuItemId: value.menu_item_id ? String(value.menu_item_id) : undefined,
+    imageUrl: value.image_url ? String(value.image_url) : undefined,
     name: { en: String(value.name_en || ''), de: String(value.name_de || '') },
     ingredients: {
       en: Array.isArray(value.ingredients_en) ? value.ingredients_en.map(String) : [],
@@ -762,6 +776,7 @@ function staffGuideFromRow(value: Record<string, unknown>): StaffGuide {
 function staffGuidePayload(input: StaffGuideInput) {
   return {
     p_menu_item_id: input.menuItemId || null,
+    p_image_url: input.imageUrl?.trim() || null,
     p_name_en: input.name.en.trim(),
     p_name_de: input.name.de.trim(),
     p_ingredients_en: input.ingredients.en.map(value => value.trim()).filter(Boolean),

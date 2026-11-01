@@ -1,9 +1,11 @@
 /* global self, caches, fetch, URL, Response */
 
-const CACHE_NAME = 'sweezypop-static-v3';
+const CACHE_NAME = 'sweezypop-static-v4';
 const CORE_ASSETS = [
   '/',
   '/pwa-icon.svg',
+  '/pwa-icon-192.png',
+  '/pwa-icon-512.png',
   '/sweezypop-loader-v3.svg',
   '/order-received.gif',
   '/order-preparing.gif',
@@ -40,4 +42,28 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(event.request).then(async (cached) => cached || (event.request.mode === 'navigate' ? await caches.match('/') : null) || Response.error())),
   );
+});
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const title = data.title || 'Sweezypop';
+  event.waitUntil(self.registration.showNotification(title, {
+    body:data.body || '',
+    icon:data.icon || '/pwa-icon-192.png',
+    badge:data.badge || '/pwa-icon-192.png',
+    tag:data.tag || 'sweezypop-order',
+    renotify:true,
+    data:{ url:data.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type:'window', includeUncontrolled:true }).then(clients => {
+    const existing = clients.find(client => client.url.startsWith(self.location.origin));
+    if (existing) return existing.focus().then(() => existing.navigate(target));
+    return self.clients.openWindow(target);
+  }));
 });

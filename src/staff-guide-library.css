@@ -53,6 +53,8 @@
 .sgl-card__number { position: absolute; top: 15px; right: 16px; color: #aaa2b1; font-size: .72rem; font-weight: 900; font-variant-numeric: tabular-nums; }
 .sgl-card__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 8px; color: var(--staff-primary, var(--sgl-primary)); background: #eee9f5; }
 .sgl-card__icon svg { width: 21px; }
+.sgl-card__icon.has-image { overflow: hidden; background: #fff; }
+.sgl-card__icon.has-image img { width: 100%; height: 100%; object-fit: cover; }
 .sgl-card__copy { display: grid; align-content: start; margin: 19px 0 17px; }
 .sgl-card__copy small { margin-bottom: 4px; overflow: hidden; color: var(--staff-muted, var(--sgl-muted)); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
 .sgl-card__copy strong { overflow: hidden; font-size: 1.05rem; line-height: 1.25; text-overflow: ellipsis; }
@@ -75,6 +77,7 @@
 .sgl-modal { position: fixed; inset: 0; z-index: 1250; display: grid; place-items: center; padding: 22px; background: rgba(27,18,38,.62); backdrop-filter: blur(12px); animation: sgl-fade 180ms ease both; }
 .sgl-dialog { width: min(860px, 100%); max-height: calc(100dvh - 44px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-radius: 12px; background: #fff; box-shadow: 0 30px 90px rgba(20,12,30,.32); animation: sgl-dialog-in 320ms cubic-bezier(.2,.8,.2,1) both; }
 .sgl-dialog > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: start; justify-content: space-between; gap: 24px; padding: 24px 26px 20px; border-bottom: 1px solid var(--sgl-border); background: rgba(255,255,255,.95); backdrop-filter: blur(14px); }
+.sgl-dialog__image { width: 92px; height: 92px; flex: 0 0 auto; object-fit: cover; border-radius: 8px; }
 .sgl-dialog > header > div > span { display: inline-flex; align-items: center; gap: 7px; color: var(--sgl-pink); font-size: .7rem; font-weight: 900; text-transform: uppercase; }
 .sgl-dialog > header span svg { width: 15px; }
 .sgl-dialog > header small { display: block; margin-top: 11px; color: var(--sgl-muted); font-size: .72rem; }

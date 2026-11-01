@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -226,18 +226,23 @@ test('POS drafts are isolated to authenticated restaurant managers',async () => 
 test('staff guides are manager-controlled, shift-gated and optimistic',async () => {
   await db.query("select set_config('test.uid',$1,false)",[admin]);
   const created=(await db.query(
-    "select save_staff_guide(null,'drink','Drink','Getränk',$1,$2,$3,$4,null) result",
+    "select save_staff_guide(null,'drink','https://images.test/drink.webp','Drink','Getränk',$1,$2,$3,$4,null) result",
     [['Milk'],['Milch'],['Mix'],['Mischen']],
   )).rows[0].result;
   assert.equal(created.menu_item_id,'drink');
+  assert.equal(created.image_url,'https://images.test/drink.webp');
+  await assert.rejects(
+    db.query("select save_staff_guide(null,'drink',null,'Duplicate','Doppelt',$1,$2,$3,$4,null)",[['x'],['x'],['x'],['x']]),
+    /already has/,
+  );
   assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,1);
 
   const updated=(await db.query(
-    "select save_staff_guide($1,'drink','Cold drink','Kaltes Getränk',$2,$3,$4,$5,$6) result",
+    "select save_staff_guide($1,'drink',null,'Cold drink','Kaltes Getränk',$2,$3,$4,$5,$6) result",
     [created.id,['Milk'],['Milch'],['Mix cold'],['Kalt mischen'],created.updated_at],
   )).rows[0].result;
   await assert.rejects(
-    db.query("select save_staff_guide($1,'drink','Stale','Veraltet',$2,$3,$4,$5,$6)",[created.id,['Milk'],['Milch'],['Mix'],['Mischen'],created.updated_at]),
+    db.query("select save_staff_guide($1,'drink',null,'Stale','Veraltet',$2,$3,$4,$5,$6)",[created.id,['Milk'],['Milch'],['Mix'],['Mischen'],created.updated_at]),
     /Guide changed/,
   );
 
@@ -246,7 +251,7 @@ test('staff guides are manager-controlled, shift-gated and optimistic',async () 
   await db.query('select start_staff_shift()');
   assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,1);
   await assert.rejects(
-    db.query("select save_staff_guide(null,null,'Bad','Nicht erlaubt',$1,$2,$3,$4,null)",[['x'],['x'],['x'],['x']]),
+    db.query("select save_staff_guide(null,null,null,'Bad','Nicht erlaubt',$1,$2,$3,$4,null)",[['x'],['x'],['x'],['x']]),
     /Access denied/,
   );
   await db.query('select end_staff_shift()');
@@ -254,4 +259,18 @@ test('staff guides are manager-controlled, shift-gated and optimistic',async () 
   await db.query("select set_config('test.uid',$1,false)",[admin]);
   await db.query('select delete_staff_guide($1,$2)',[updated.id,updated.updated_at]);
   assert.equal((await db.query('select jsonb_array_length(get_staff_guides()) n')).rows[0].n,0);
+});
+
+test('push subscriptions require the private tracking key and are isolated by order',async () => {
+  await db.query("select set_config('test.uid','',false)");
+  const pushKey=randomUUID();
+  const order=await place(pushKey,[{id:'drink',quantity:1}],'menu','push-client-0001');
+  const subscription={endpoint:'https://push.example.test/subscriptions/customer-1',keys:{p256dh:'A'.repeat(80),auth:'B'.repeat(24)}};
+  await assert.rejects(
+    db.query('select register_order_push($1,$2,$3::jsonb,$4)',[order.id,randomUUID(),JSON.stringify(subscription),'de']),
+    /Order tracking not found/,
+  );
+  await db.query('select register_order_push($1,$2,$3::jsonb,$4)',[order.id,pushKey,JSON.stringify(subscription),'en']);
+  const savedSubscription=(await db.query('select order_id,locale from order_push_subscriptions where order_id=$1',[order.id])).rows[0];
+  assert.deepEqual(savedSubscription,{order_id:order.id,locale:'en'});
 });
