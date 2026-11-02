@@ -1758,8 +1758,8 @@ function Dashboard(props: {
   ];
 
   if (props.mode === 'admin') {
+    sidebarItems.splice(1, 0, { id: 'users', label: t(props.locale, 'users'), icon: UsersRound });
     sidebarItems.push({ id: 'footer', label: 'Footer', icon: Copyright });
-    sidebarItems.push({ id: 'users', label: t(props.locale, 'users'), icon: UsersRound });
   }
 
   const addCategory = () => {
