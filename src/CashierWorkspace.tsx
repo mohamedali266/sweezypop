@@ -153,7 +153,7 @@ export function CashierWorkspace(props: {
 
   const enableAlerts=async()=>{
     try {
-      const audio=new Audio('/notification.mp3');audio.preload='auto';audio.volume=0.95;
+      const audio=new Audio('/staff-notification-v2.mp3');audio.preload='auto';audio.volume=0.95;
       await audio.play();audio.pause();audio.currentTime=0;alertAudio.current=audio;setSoundEnabled(true);
       if ('Notification' in window && Notification.permission==='default') await Notification.requestPermission();
     } catch { setSoundEnabled(false);setError(text.error); }

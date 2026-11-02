@@ -242,7 +242,7 @@ export function StaffWorkspace({ locale, siteName, logoUrl, staffName, restauran
 
   const unlockAudio = useCallback(async () => {
     if (!alertAudio.current) {
-      alertAudio.current = new Audio('/notification.mp3');
+      alertAudio.current = new Audio('/staff-notification-v2.mp3');
       alertAudio.current.preload = 'auto';
       alertAudio.current.volume = 0.95;
     }

@@ -178,10 +178,14 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
       {notice&&<p className="pos-notice" role="status">{notice}</p>}
       <label className="pos-search"><Search size={18} /><input ref={searchRef} aria-label={text.search} placeholder={text.searchPlaceholder} value={query} onChange={e => setQuery(e.target.value)} /></label>
       <nav className="pos-categories" aria-label={text.categories}><button aria-pressed={category==='all'} onClick={() => setCategory('all')}>{text.all}</button>{categories.map(c => <button key={c.id} aria-pressed={category===c.id} onClick={() => setCategory(c.id)}>{c.name[locale]}</button>)}</nav>
-      <div className="pos-products">{visible.map(item => <button className="pos-product" key={item.id} disabled={busy} onClick={() => add(item)}>
-        {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : <span className="pos-no-image"><ShoppingBag size={26} /></span>}
-        <strong>{item.name[locale]}</strong><span>{formatEuro(item.price, locale)}<Plus size={17} /></span>
-      </button>)}</div>
+      <div className="pos-products">{visible.map(item => {
+        const selectedLine = cart.find(line => line.item.id === item.id);
+        return <button className={`pos-product${selectedLine ? ' selected' : ''}`} aria-pressed={Boolean(selectedLine)} key={item.id} disabled={busy} onClick={() => add(item)}>
+          {selectedLine && <span className="pos-product-quantity" aria-label={`${selectedLine.quantity} ${locale === 'de' ? 'in der Bestellung' : 'in order'}`}>{selectedLine.quantity}</span>}
+          {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : <span className="pos-no-image"><ShoppingBag size={26} /></span>}
+          <strong>{item.name[locale]}</strong><span>{formatEuro(item.price, locale)}<Plus size={17} /></span>
+        </button>;
+      })}</div>
       {!visible.length && <p className="pos-empty">{text.noResults}</p>}
     </div>
     <aside className={`pos-basket ${basketOpen ? 'open' : ''}`} aria-label={text.currentOrder}>
