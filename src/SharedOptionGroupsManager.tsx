@@ -16,12 +16,13 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   const [query,setQuery] = useState('');
   const [error,setError] = useState('');
   const visibleItems = useMemo(() => items.filter(item => `${item.name.en} ${item.name.de}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
+  const editorOpen = Boolean(editing);
   useEffect(() => {
-    if (!editing) return;
+    if (!editorOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
-  }, [editing]);
+  }, [editorOpen]);
   const text = locale === 'de' ? {
     title:'Optionsgruppen', intro:'Wiederverwendbare Sorten, Toppings und Extras zentral erstellen und gezielt verknüpfen.', create:'Gruppe erstellen', empty:'Noch keine Optionsgruppen.',
     name:'Gruppenname', choice:'Auswahlart', single:'Eine Auswahl', multiple:'Mehrfachauswahl', required:'Pflichtauswahl', min:'Minimum', max:'Maximum', options:'Optionen', addOption:'Option hinzufügen',
@@ -54,12 +55,31 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
     </article>)}</div>}
 
     {editing && <div className="group-editor-overlay" onClick={() => setEditing(null)}><aside className="group-editor-drawer" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-      <header><div><span>{locale === 'de' ? 'OPTIONEN-BIBLIOTHEK' : 'OPTIONS LIBRARY'}</span><h2>{editing.name[locale] || text.create}</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close"><X/></button></header>
+      <header><div><span>{locale === 'de' ? 'OPTIONEN-BIBLIOTHEK' : 'OPTIONS LIBRARY'}</span><h2>{editing.name[locale] || text.create}</h2><p>{editing.options.length} {locale === 'de' ? 'Optionen' : 'options'} · {editing.linkedCategoryIds.length + editing.linkedItemIds.length} {locale === 'de' ? 'Verknüpfungen' : 'connections'}</p></div><button type="button" onClick={() => setEditing(null)} aria-label="Close"><X/></button></header>
       <div className="group-editor-body">
         <section><h3>{text.name}</h3><div className="group-form-grid"><label>English<input value={editing.name.en} onChange={event => patch({ name:{ ...editing.name,en:event.target.value } })}/></label><label>Deutsch<input value={editing.name.de} onChange={event => patch({ name:{ ...editing.name,de:event.target.value } })}/></label></div></section>
         <section><h3>{text.choice}</h3><div className="group-rules"><label><select value={editing.mode} onChange={event => patch({ mode:event.target.value as 'single'|'multiple',max:event.target.value === 'single' ? 1 : Math.max(1,editing.max) })}><option value="single">{text.single}</option><option value="multiple">{text.multiple}</option></select></label><label className="toggle-line"><input type="checkbox" checked={editing.required} onChange={event => patch({ required:event.target.checked,min:event.target.checked ? Math.max(1,editing.min) : 0 })}/>{text.required}</label>{editing.mode === 'multiple' && <><label>{text.min}<input type="number" min="0" value={editing.min} onChange={event => patch({ min:Math.max(0,Number(event.target.value)) })}/></label><label>{text.max}<input type="number" min="1" max="20" value={editing.max} onChange={event => patch({ max:Math.max(1,Number(event.target.value)) })}/></label></>}</div></section>
         <section><div className="group-section-head"><h3>{text.options}</h3><button type="button" onClick={() => patch({ options:[...editing.options,{ id:uid('option'),name:{en:'',de:''},priceDelta:0,available:true }] })}><Plus/>{text.addOption}</button></div><div className="group-option-rows">{editing.options.map(option => <div key={option.id}><input value={option.name.en} onChange={event => patch({ options:editing.options.map(current => current.id === option.id ? { ...current,name:{ ...current.name,en:event.target.value } } : current) })} placeholder="Option (EN)"/><input value={option.name.de} onChange={event => patch({ options:editing.options.map(current => current.id === option.id ? { ...current,name:{ ...current.name,de:event.target.value } } : current) })} placeholder="Option (DE)"/><label><span>+ €</span><input type="number" min="0" step="0.01" value={option.priceDelta} onChange={event => patch({ options:editing.options.map(current => current.id === option.id ? { ...current,priceDelta:Math.max(0,Number(event.target.value)) } : current) })}/></label><button type="button" className={`option-availability ${option.available ? 'status-on' : ''}`} onClick={() => patch({ options:editing.options.map(current => current.id === option.id ? { ...current,available:!current.available } : current) })}>{option.available ? <Check/> : <Minus/>}<span>{option.available ? (locale === 'de' ? 'Verfügbar' : 'Available') : (locale === 'de' ? 'Deaktiviert' : 'Disabled')}</span></button><button type="button" className="danger" onClick={() => patch({ options:editing.options.filter(current => current.id !== option.id) })}><Trash2/></button></div>)}</div></section>
-        <section><h3>{text.links}</h3><h4>{text.categories}</h4><div className="link-chip-grid">{categories.map(category => <label key={category.id} className={editing.linkedCategoryIds.includes(category.id) ? 'selected' : ''}><input type="checkbox" checked={editing.linkedCategoryIds.includes(category.id)} onChange={() => patch({ linkedCategoryIds:editing.linkedCategoryIds.includes(category.id) ? editing.linkedCategoryIds.filter(id => id !== category.id) : [...editing.linkedCategoryIds,category.id] })}/>{category.name[locale] || category.name.en}</label>)}</div><h4>{text.products}</h4><label className="group-search"><Search/><input value={query} onChange={event => setQuery(event.target.value)} placeholder={text.search}/></label><div className="linked-items-list">{visibleItems.map(item => <label key={item.id} className={editing.linkedItemIds.includes(item.id) ? 'selected' : ''}><input type="checkbox" checked={editing.linkedItemIds.includes(item.id)} onChange={() => patch({ linkedItemIds:editing.linkedItemIds.includes(item.id) ? editing.linkedItemIds.filter(id => id !== item.id) : [...editing.linkedItemIds,item.id] })}/><span>{item.name[locale] || item.name.en}</span><small>{categories.find(category => category.id === item.categoryId)?.name[locale]}</small></label>)}</div></section>
+        <section className="group-links-section">
+          <div className="group-editor-section-title"><div><span><Link2/></span><div><h3>{text.links}</h3><p>{locale === 'de' ? 'Auf ganze Kategorien oder gezielt auf einzelne Artikel anwenden.' : 'Apply this group to whole categories or specific products.'}</p></div></div></div>
+          <div className="group-link-columns">
+            <div className="group-link-panel">
+              <header><div><h4>{text.categories}</h4><p>{locale === 'de' ? 'Alle Artikel der gewählten Kategorie' : 'Every item in a selected category'}</p></div><b>{editing.linkedCategoryIds.length}</b></header>
+              <div className="link-chip-grid">{categories.map(category => {
+                const selected = editing.linkedCategoryIds.includes(category.id);
+                return <button type="button" aria-pressed={selected} key={category.id} className={selected ? 'selected' : ''} onClick={() => patch({ linkedCategoryIds:selected ? editing.linkedCategoryIds.filter(id => id !== category.id) : [...editing.linkedCategoryIds,category.id] })}><span className="selection-mark">{selected && <Check/>}</span><span>{category.name[locale] || category.name.en}</span></button>;
+              })}</div>
+            </div>
+            <div className="group-link-panel">
+              <header><div><h4>{text.products}</h4><p>{locale === 'de' ? 'Zusätzliche einzelne Artikel auswählen' : 'Select additional individual items'}</p></div><b>{editing.linkedItemIds.length}</b></header>
+              <label className="group-search"><Search/><input value={query} onChange={event => setQuery(event.target.value)} placeholder={text.search}/></label>
+              <div className="linked-items-list">{visibleItems.map(item => {
+                const selected = editing.linkedItemIds.includes(item.id);
+                return <button type="button" aria-pressed={selected} key={item.id} className={selected ? 'selected' : ''} onClick={() => patch({ linkedItemIds:selected ? editing.linkedItemIds.filter(id => id !== item.id) : [...editing.linkedItemIds,item.id] })}><span className="selection-mark">{selected && <Check/>}</span><span className="linked-item-copy"><strong>{item.name[locale] || item.name.en}</strong><small>{categories.find(category => category.id === item.categoryId)?.name[locale] || categories.find(category => category.id === item.categoryId)?.name.en}</small></span></button>;
+              })}</div>
+            </div>
+          </div>
+        </section>
         {error && <p className="form-error">{error}</p>}
       </div>
       <footer><button type="button" className="small-action neutral" onClick={() => setEditing(null)}>{locale === 'de' ? 'Abbrechen' : 'Cancel'}</button><button type="button" className="small-action" onClick={save}><Save/>{text.save}</button></footer>
