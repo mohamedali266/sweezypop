@@ -9,7 +9,8 @@ import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
 import { CashierWorkspace } from './CashierWorkspace';
 import { OrderJourney } from './OrderJourney';
-import { OptionGroupsEditor, ProductOptionsDialog } from './ProductOptions';
+import { ProductOptionsDialog } from './ProductOptions';
+import { SharedOptionGroupsManager } from './SharedOptionGroupsManager';
 import { activeOptionGroups, cartLineKey, configuredCartItem, selectionLabels } from './optionLogic';
 import { FooterManager, MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
@@ -31,6 +32,7 @@ import {
   LayoutGrid,
   LayoutDashboard,
   List,
+  ListPlus,
   LogIn,
   LogOut,
   Menu,
@@ -71,10 +73,10 @@ import {
   type RemoteState,
 } from './remoteData';
 import { isSupabaseConfigured, supabase } from './supabase';
-import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, ProductOptionGroup, ProductSelection, SocialLink, ThemeSettings, UserRole } from './types';
+import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, ProductSelection, ProductSize, SharedOptionGroup, SocialLink, ThemeSettings, UserRole } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'cashier' | 'password-change';
-type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'footer' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
+type DashboardSection = 'overview' | 'pos' | 'items' | 'option-groups' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'footer' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
 type AppearanceTab = 'brand' | 'colors' | 'layout' | 'contact' | 'qr';
 
 type BeforeInstallPromptEvent = Event & {
@@ -286,6 +288,7 @@ function AppContent() {
   const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [optionGroups, setOptionGroups] = useState<SharedOptionGroup[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
@@ -418,6 +421,7 @@ function AppContent() {
     baseline.current = remoteState;
     setCategories(safeArray(remoteState.categories, seedCategories));
     setItems(safeArray(remoteState.items, seedItems));
+    setOptionGroups(safeArray(remoteState.optionGroups, []));
     setOrders(safeArray(remoteState.orders, initialOrders));
     setUsers(safeArray(remoteState.users, seedUsers));
     setTheme(normalizeThemeSettings(remoteState.theme));
@@ -440,7 +444,7 @@ function AppContent() {
 
     if (profileError || !profile) return;
 
-    const remoteState = await loadRemoteState({ categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
+    const remoteState = await loadRemoteState({ categories, items, optionGroups, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
     if (remoteState) applyRemoteState(remoteState);
 
     setAuthRole(profile.role);
@@ -609,7 +613,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    const fallback: RemoteState = { categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout };
+    const fallback: RemoteState = { categories, items, optionGroups, orders, users, theme: normalizeThemeSettings(theme), hours, layout };
     loadRemoteState(fallback)
       .then((remoteState) => {
         if (!remoteState) return;
@@ -706,12 +710,12 @@ function AppContent() {
   useEffect(() => {
     if (!isSupabaseConfigured || !remoteReady || !['admin','owner'].includes(authRole || '') || !baseline.current || saveInFlight.current) return;
     const previous = baseline.current;
-    if (JSON.stringify([categories,items,hours,users]) === JSON.stringify([previous.categories,previous.items,previous.hours,previous.users])) return;
+    if (JSON.stringify([categories,items,optionGroups,hours,users]) === JSON.stringify([previous.categories,previous.items,previous.optionGroups,previous.hours,previous.users])) return;
     setSaveMessage('Nicht gespeicherte Änderungen');
     const syncId = window.setTimeout(() => {
       saveInFlight.current = true;
       setSaveMessage('Wird gespeichert …');
-      const snapshot = { categories, items, orders, users, theme, hours, layout };
+      const snapshot = { categories, items, optionGroups, orders, users, theme, hours, layout };
       saveRemoteState(snapshot, previous).then(async () => {
         baseline.current = { ...snapshot, users:previous.users };
         await saveRemoteUsers(users,previous.users);
@@ -726,7 +730,7 @@ function AppContent() {
     return () => window.clearTimeout(syncId);
     // Theme and layout are saved explicitly from Appearance to avoid broad dashboard writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authRole, categories, hours, items, users, remoteReady, syncVersion]);
+  }, [authRole, categories, hours, items, optionGroups, users, remoteReady, syncVersion]);
 
   const persistSiteSettings = async (nextTheme: ThemeSettings, nextLayout: MenuLayout) => {
     if (isSupabaseConfigured && (authRole === 'admin' || authRole === 'owner')) {
@@ -744,7 +748,7 @@ function AppContent() {
       if (busy || saveInFlight.current || document.hidden) return;
       busy = true;
       try {
-        const remote = await loadRemoteState({ categories, items, orders:[], users:[], theme, hours, layout });
+        const remote = await loadRemoteState({ categories, items, optionGroups, orders:[], users:[], theme, hours, layout });
         if (!remote || stopped) return;
         if (!authRole) applyRemoteState(remote);
         else { setOrders(remote.orders); }
@@ -826,7 +830,7 @@ function AppContent() {
 
       if (profileError) return `${t(locale, 'loginNoProfile')} (${profileError.message})`;
       if (!profile) return `${t(locale, 'loginNoProfile')} User id: ${data.user.id}`;
-      const remoteState = await loadRemoteState({ categories, items, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
+      const remoteState = await loadRemoteState({ categories, items, optionGroups, orders, users, theme: normalizeThemeSettings(theme), hours, layout });
       if (remoteState) {
         applyRemoteState(remoteState);
       }
@@ -973,6 +977,8 @@ function AppContent() {
           setItems={setItems}
           categories={categories}
           setCategories={setCategories}
+          optionGroups={optionGroups}
+          setOptionGroups={setOptionGroups}
           orders={orders}
           setOrders={setOrders}
           users={users}
@@ -1344,7 +1350,7 @@ function MenuPage(props: {
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .map((category) => (
             <button key={category.id} className={props.activeCategory === category.id ? 'active' : ''} onClick={() => props.setActiveCategory(category.id)}>
-              {category.name[props.locale]}
+              {category.name[props.locale]?.trim() || category.name.en}
             </button>
           ))}
       </section>
@@ -1713,6 +1719,8 @@ function Dashboard(props: {
   setItems: (items: MenuItem[]) => void;
   categories: Category[];
   setCategories: (categories: Category[]) => void;
+  optionGroups: SharedOptionGroup[];
+  setOptionGroups: (groups: SharedOptionGroup[]) => void;
   orders: Order[];
   setOrders: (orders: Order[]) => void;
   users: AppUser[];
@@ -1759,6 +1767,7 @@ function Dashboard(props: {
     { id: 'overview', label: t(props.locale, 'dashboard'), icon: LayoutDashboard },
     { id: 'pos', label: props.locale === 'de' ? 'Kasse / POS' : 'Point of sale', icon: Monitor },
     { id: 'items', label: t(props.locale, 'manageItems'), icon: PackageOpen },
+    { id: 'option-groups', label: props.locale === 'de' ? 'Optionsgruppen' : 'Option groups', icon: ListPlus },
     { id: 'categories', label: t(props.locale, 'manageCategories'), icon: List },
     { id: 'offers', label: t(props.locale, 'offers'), icon: BadgeDollarSign },
     { id: 'appearance', label: t(props.locale, 'appearance'), icon: Palette },
@@ -2018,6 +2027,16 @@ function Dashboard(props: {
             />
           )}
 
+          {activeSection === 'option-groups' && (
+            <SharedOptionGroupsManager
+              locale={props.locale}
+              groups={props.optionGroups}
+              onChange={props.setOptionGroups}
+              categories={props.categories}
+              items={props.items.filter((item) => !isOfferItem(item))}
+            />
+          )}
+
           {activeSection === 'categories' && (
             <section className="dashboard-card focus-card" id="manage-categories">
             <div className="section-head">
@@ -2028,13 +2047,9 @@ function Dashboard(props: {
             </div>
             <div className="editable-list">
               {props.categories.map((category) => (
-                <div key={category.id} className="editable-row two">
-                  <input
-                    value={category.name[props.locale]}
-                    onChange={(event) =>
-                      props.setCategories(props.categories.map((current) => (current.id === category.id ? { ...current, name: { ...current.name, [props.locale]: event.target.value } } : current)))
-                    }
-                  />
+                <div key={category.id} className="category-translation-row">
+                  <label><span>English</span><input value={category.name.en} onChange={(event) => props.setCategories(props.categories.map((current) => current.id === category.id ? { ...current, name:{ ...current.name, en:event.target.value } } : current))} /></label>
+                  <label><span>Deutsch</span><input value={category.name.de} onChange={(event) => props.setCategories(props.categories.map((current) => current.id === category.id ? { ...current, name:{ ...current.name, de:event.target.value } } : current))} /></label>
                   <button onClick={() => deleteCategory(category.id)}>
                     <Trash2 size={16} />
                   </button>
@@ -2186,15 +2201,15 @@ function ItemsManager({
     price: '',
     badgeEn: '',
     badgeDe: '',
-    imageStyle: 'pink',
     available: true,
-    optionGroups: [] as ProductOptionGroup[],
+    hasSizes: false,
+    sizes: [] as ProductSize[],
   });
   const [formError, setFormError] = useState('');
 
   const emptyItemForm = () => ({
     nameEn: '', nameDe: '', descriptionEn: '', descriptionDe: '', categoryId: categories[0]?.id || '',
-    imageUrl: '', price: '', badgeEn: '', badgeDe: '', imageStyle: 'pink', available: true, optionGroups: [] as ProductOptionGroup[],
+    imageUrl: '', price: '', badgeEn: '', badgeDe: '', available: true, hasSizes: false, sizes: [] as ProductSize[],
   });
 
   const openCreateItem = () => {
@@ -2209,8 +2224,8 @@ function ItemsManager({
     setForm({
       nameEn:item.name.en, nameDe:item.name.de, descriptionEn:item.description.en, descriptionDe:item.description.de,
       categoryId:item.categoryId, imageUrl:item.imageUrl || '', price:String(item.price), badgeEn:item.badge?.en || '',
-      badgeDe:item.badge?.de || '', imageStyle:item.imageStyle, available:item.available,
-      optionGroups:item.optionGroups || [],
+      badgeDe:item.badge?.de || '', available:item.available,
+      hasSizes:Boolean(item.sizes?.length), sizes:item.sizes || [],
     });
     setFormError('');
     setFormOpen(true);
@@ -2258,7 +2273,8 @@ function ItemsManager({
 
   const submitItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const price = Number(form.price);
+    const validSizes = form.hasSizes ? form.sizes.filter((size) => size.name.en.trim() || size.name.de.trim()) : [];
+    const price = form.hasSizes ? Math.min(...validSizes.filter((size) => size.available).map((size) => Number(size.price))) : Number(form.price);
     if (!form.nameEn.trim()) {
       setFormError(t(locale, 'itemNameRequired'));
       return;
@@ -2271,9 +2287,9 @@ function ItemsManager({
       setFormError(t(locale, 'priceRequired'));
       return;
     }
-    const invalidOptions = form.optionGroups.some(group => !group.name.en.trim() || !group.name.de.trim() || !group.options.length || group.min < 0 || group.max < Math.max(group.required ? 1 : 0,group.min) || group.options.filter(option => option.available).length < (group.required ? Math.max(1,group.min) : group.min) || group.options.some(option => !option.name.en.trim() || !option.name.de.trim() || !Number.isFinite(option.priceDelta) || option.priceDelta < 0));
-    if (invalidOptions) {
-      setFormError(locale === 'de' ? 'Bitte alle Optionsgruppen vollständig und gültig ausfüllen.' : 'Complete every option group with valid names, limits and prices.');
+    const invalidSizes = form.hasSizes && (!validSizes.length || !validSizes.some((size) => size.available) || validSizes.some((size) => !size.name.en.trim() || !size.name.de.trim() || !Number.isFinite(Number(size.price)) || Number(size.price) <= 0));
+    if (invalidSizes) {
+      setFormError(locale === 'de' ? 'Bitte alle Größen vollständig ausfüllen und mindestens eine aktivieren.' : 'Complete every size and keep at least one available.');
       return;
     }
 
@@ -2288,12 +2304,12 @@ function ItemsManager({
       },
       price,
       badge: form.badgeEn.trim() ? { en: form.badgeEn.trim(), de: form.badgeDe.trim() || form.badgeEn.trim() } : undefined,
-      imageStyle: form.imageStyle,
+      imageStyle: previous?.imageStyle || 'pink',
       imageUrl: form.imageUrl.trim(),
       available: form.available,
       sortOrder: previous?.sortOrder || items.length + 1,
       includedItemIds: previous?.includedItemIds,
-      optionGroups: form.optionGroups,
+      sizes: form.hasSizes ? validSizes.map((size) => ({ ...size, price:Number(size.price) })) : [],
       preparation: previous?.preparation,
     };
 
@@ -2359,11 +2375,13 @@ function ItemsManager({
             <select value={item.categoryId} onChange={(event) => updateItem(item.id, { categoryId: event.target.value })}>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
-                  {category.name[locale]}
+                  {category.name[locale]?.trim() || category.name.en}
                 </option>
               ))}
             </select>
-            <input type="number" value={item.price} onChange={(event) => updateItem(item.id, { price: Number(event.target.value) })} />
+            {item.sizes?.length
+              ? <span className="item-size-price">{locale === 'de' ? 'Ab' : 'From'} {currency.format(Math.min(...item.sizes.filter((size) => size.available).map((size) => size.price)))}</span>
+              : <input type="number" value={item.price} onChange={(event) => updateItem(item.id, { price: Number(event.target.value) })} />}
             <button title={locale === 'de' ? 'Zubereitung bearbeiten' : 'Edit preparation'} onClick={() => setPreparationItem(item)}>
               <ChefHat size={16} />
             </button>
@@ -2378,8 +2396,8 @@ function ItemsManager({
       </div>
 
       {formOpen && (
-        <div className="modal-overlay" role="presentation" onClick={() => setFormOpen(false)}>
-          <form className="item-form-card animated-panel" role="dialog" aria-modal="true" aria-label={editingItemId ? (locale === 'de' ? 'Artikel bearbeiten' : 'Edit item') : t(locale, 'addItem')} onClick={(event) => event.stopPropagation()} onSubmit={submitItem}>
+        <div className="item-editor-overlay" role="presentation" onClick={() => setFormOpen(false)}>
+          <form className="item-form-card item-editor-drawer" role="dialog" aria-modal="true" aria-label={editingItemId ? (locale === 'de' ? 'Artikel bearbeiten' : 'Edit item') : t(locale, 'addItem')} onClick={(event) => event.stopPropagation()} onSubmit={submitItem}>
             <div className="section-head">
               <div>
                 <span className="eyebrow dark">{editingItemId ? (locale === 'de' ? 'Menüartikel' : 'Menu item') : t(locale, 'newMenuItem')}</span>
@@ -2409,10 +2427,10 @@ function ItemsManager({
                   ))}
                 </select>
               </label>
-              <label>
+              {!form.hasSizes && <label>
                 {t(locale, 'price')}
                 <input type="number" min="0" step="0.01" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="8.50" />
-              </label>
+              </label>}
               <label className="wide">
                 {t(locale, 'description')}
                 <textarea value={form.descriptionEn} onChange={(event) => setForm({ ...form, descriptionEn: event.target.value })} placeholder="Short appetizing menu description" />
@@ -2425,7 +2443,7 @@ function ItemsManager({
 
             <div className="item-form-split">
               <div className="upload-panel">
-                <div className={`image-preview food-art ${form.imageStyle} ${form.imageUrl ? 'has-image' : ''}`}>
+                <div className={`image-preview food-art pink ${form.imageUrl ? 'has-image' : ''}`}>
                   {form.imageUrl ? <img src={form.imageUrl} alt="Item preview" /> : <Image size={34} />}
                   {form.badgeEn && <span>{form.badgeEn}</span>}
                 </div>
@@ -2448,16 +2466,6 @@ function ItemsManager({
               </div>
 
               <div className="theme-form">
-                <label>
-                  {t(locale, 'visualStyle')}
-                  <select value={form.imageStyle} onChange={(event) => setForm({ ...form, imageStyle: event.target.value })}>
-                    {['pink', 'lavender', 'caramel', 'mochi', 'matcha', 'drink-pink', 'combo'].map((style) => (
-                      <option key={style} value={style}>
-                        {style}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <div className="badge-options" aria-label={t(locale, 'badgePresets')}>
                   {badgePresets.map((badge) => (
                     <button
@@ -2481,7 +2489,22 @@ function ItemsManager({
               </div>
             </div>
 
-            <OptionGroupsEditor locale={locale} groups={form.optionGroups} onChange={(optionGroups) => setForm({...form,optionGroups})} />
+            <section className="size-editor">
+              <div className="size-editor-heading">
+                <div><span>{locale === 'de' ? 'PREISSTRUKTUR' : 'PRICING'}</span><h3>{locale === 'de' ? 'Hat dieser Artikel Größen?' : 'Does this item have sizes?'}</h3><p>{locale === 'de' ? 'Jede Größe erhält einen eigenen Endpreis.' : 'Each size has its own final selling price.'}</p></div>
+                <label className="toggle-line"><input type="checkbox" checked={form.hasSizes} onChange={(event) => setForm({ ...form, hasSizes:event.target.checked, sizes:event.target.checked && !form.sizes.length ? [{ id:`size-${crypto.randomUUID()}`, name:{en:'',de:''}, price:Number(form.price) || 0, available:true }] : form.sizes })} />{form.hasSizes ? (locale === 'de' ? 'Größen aktiv' : 'Sizes enabled') : (locale === 'de' ? 'Ein Preis' : 'Single price')}</label>
+              </div>
+              {form.hasSizes && <>
+                <div className="size-editor-list">{form.sizes.map((size) => <div key={size.id} className="size-editor-row">
+                  <input value={size.name.en} onChange={(event) => setForm({ ...form, sizes:form.sizes.map((current) => current.id === size.id ? { ...current, name:{ ...current.name,en:event.target.value } } : current) })} placeholder="Size (EN), e.g. Large" />
+                  <input value={size.name.de} onChange={(event) => setForm({ ...form, sizes:form.sizes.map((current) => current.id === size.id ? { ...current, name:{ ...current.name,de:event.target.value } } : current) })} placeholder="Größe (DE), z. B. Groß" />
+                  <label><span>€</span><input type="number" min="0.01" step="0.01" value={size.price} onChange={(event) => setForm({ ...form, sizes:form.sizes.map((current) => current.id === size.id ? { ...current, price:Number(event.target.value) } : current) })} /></label>
+                  <button type="button" className={size.available ? 'size-available' : ''} onClick={() => setForm({ ...form, sizes:form.sizes.map((current) => current.id === size.id ? { ...current, available:!current.available } : current) })}>{size.available ? <Check size={17}/> : <Minus size={17}/>}</button>
+                  <button type="button" className="danger-icon" onClick={() => setForm({ ...form, sizes:form.sizes.filter((current) => current.id !== size.id) })}><Trash2 size={17}/></button>
+                </div>)}</div>
+                <button type="button" className="small-action neutral" onClick={() => setForm({ ...form, sizes:[...form.sizes,{ id:`size-${crypto.randomUUID()}`,name:{en:'',de:''},price:0,available:true }] })}><Plus size={16}/>{locale === 'de' ? 'Größe hinzufügen' : 'Add size'}</button>
+              </>}
+            </section>
 
             {formError && <p className="form-error">{formError}</p>}
             <div className="modal-actions">

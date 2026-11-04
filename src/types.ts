@@ -37,6 +37,21 @@ export interface ProductOptionGroup {
   options: ProductOption[];
 }
 
+export interface ProductSize {
+  id: string;
+  name: Record<Locale, string>;
+  price: number;
+  available: boolean;
+}
+
+export interface SharedOptionGroup extends ProductOptionGroup {
+  restaurantId?: string;
+  linkedCategoryIds: string[];
+  linkedItemIds: string[];
+  active: boolean;
+  sortOrder: number;
+}
+
 export interface ProductSelection {
   groupId: string;
   optionIds: string[];
@@ -55,6 +70,8 @@ export interface MenuItem {
   sortOrder: number;
   includedItemIds?: string[];
   optionGroups?: ProductOptionGroup[];
+  sizes?: ProductSize[];
+  optionGroupIds?: string[];
   preparation?: ItemPreparation;
 }
 

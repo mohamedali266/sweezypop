@@ -1,9 +1,10 @@
-import type { AppUser, CartLine, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, CartLine, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SharedOptionGroup, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
   categories: Category[];
   items: MenuItem[];
+  optionGroups: SharedOptionGroup[];
   orders: Order[];
   users: AppUser[];
   theme: ThemeSettings;
@@ -267,15 +268,17 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
   const restaurant = await getRestaurant();
   const restaurantId = restaurant.id;
 
-  const [categoriesResult, itemsResult, hoursResult, contentResult] = await Promise.all([
+  const [categoriesResult, itemsResult, optionGroupsResult, hoursResult, contentResult] = await Promise.all([
     supabase.from('categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
     supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+    supabase.from('product_option_groups').select('*').eq('restaurant_id',restaurantId).order('sort_order'),
     supabase.from('opening_hours').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
     supabase.from('restaurant_content_settings').select('reviews_visible,footer_copyright_en,footer_copyright_de').eq('restaurant_id', restaurantId).maybeSingle(),
   ]);
 
   if (categoriesResult.error) throw categoriesResult.error;
   if (itemsResult.error) throw itemsResult.error;
+  if (optionGroupsResult.error) throw optionGroupsResult.error;
   if (hoursResult.error) throw hoursResult.error;
   if (contentResult.error) throw contentResult.error;
 
@@ -285,6 +288,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
     sortOrder: category.sort_order || 0,
   }));
 
+  const optionGroups: SharedOptionGroup[]=(optionGroupsResult.data||[]).map(group=>({id:group.id,name:{en:group.name_en,de:group.name_de},mode:group.mode,required:Boolean(group.required),min:Number(group.min_select||0),max:Number(group.max_select||1),options:Array.isArray(group.options)?group.options:[],linkedCategoryIds:group.linked_category_ids||[],linkedItemIds:group.linked_item_ids||[],active:Boolean(group.active),sortOrder:Number(group.sort_order||0)}));
   const items: MenuItem[] = (itemsResult.data || []).map((item) => {
     const offerDescription = readOfferDescription(item.description_de);
     return {
@@ -299,7 +303,11 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       available: Boolean(item.available),
       sortOrder: item.sort_order || 0,
       includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
-      optionGroups: Array.isArray(item.option_groups) ? item.option_groups : [],
+      sizes:Array.isArray(item.sizes)?item.sizes:[], optionGroupIds:item.option_group_ids||[],
+      optionGroups:[
+        ...(Array.isArray(item.sizes)&&item.sizes.length?[{id:'__size__',name:{en:'Size',de:'Größe'},mode:'single' as const,required:true,min:1,max:1,options:item.sizes.map((size:{id:string;name:{en:string;de:string};price:number;available:boolean})=>({id:size.id,name:size.name,priceDelta:Math.max(0,Number(size.price)-Number(item.price||0)),available:Boolean(size.available)}))}]:[]),
+        ...optionGroups.filter(group=>group.active&&(group.linkedCategoryIds.includes(item.category_id)||group.linkedItemIds.includes(item.id))),
+      ],
       preparation: {
         station: item.prep_station || 'kitchen',
         estimatedMinutes: Number(item.prep_minutes || 0),
@@ -316,6 +324,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
   return {
     categories,
     items,
+    optionGroups,
     hours: (hoursResult.data || []).length
       ? (hoursResult.data || []).map((hour) => ({
           day: hour.day,
@@ -369,13 +378,14 @@ function catalogRows(state: RemoteState, restaurantId: string): Record<string, R
     categories: state.categories.map(c => ({ id:c.id, restaurant_id:restaurantId, name_en:c.name.en, name_de:c.name.de, sort_order:c.sortOrder })),
     menu_items: state.items.map(i => ({ id:i.id, restaurant_id:restaurantId, category_id:i.categoryId, name_en:i.name.en, name_de:i.name.de,
       description_en:i.description.en, description_de:i.description.de, price:i.price, badge_en:i.badge?.en || null, badge_de:i.badge?.de || null,
-      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [], option_groups:i.optionGroups || [],
+      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [], sizes:i.sizes||[], option_group_ids:i.optionGroupIds||[],
       prep_station:i.preparation?.station || 'kitchen', prep_minutes:i.preparation?.estimatedMinutes || 0,
       prep_ingredients_en:i.preparation?.ingredients.en || [], prep_ingredients_de:i.preparation?.ingredients.de || [],
       prep_tools_en:i.preparation?.tools.en || [], prep_tools_de:i.preparation?.tools.de || [],
       prep_steps_en:i.preparation?.steps.en || [], prep_steps_de:i.preparation?.steps.de || [],
       prep_warning_en:i.preparation?.warning.en || '', prep_warning_de:i.preparation?.warning.de || '' })),
     opening_hours: state.hours.map((h,index) => ({ id:appId('hour',h.day), restaurant_id:restaurantId, day:h.day, open_time:h.open, close_time:h.close, enabled:h.enabled, sort_order:index+1 })),
+    product_option_groups:state.optionGroups.map(group=>({id:group.id,restaurant_id:restaurantId,name_en:group.name.en,name_de:group.name.de,mode:group.mode,required:group.required,min_select:group.min,max_select:group.max,options:group.options,linked_category_ids:group.linkedCategoryIds,linked_item_ids:group.linkedItemIds,active:group.active,sort_order:group.sortOrder})),
   };
 }
 
@@ -386,7 +396,7 @@ export async function saveRemoteState(state: RemoteState, previous: RemoteState)
   const before = catalogRows(previous, restaurant.id);
   const changes: { table: string; id: string; before: Row | null; after: Row | null }[] = [];
   // Only changed entities are sent; absent rows elsewhere in the database are never deleted.
-  for (const table of ['categories','menu_items','opening_hours']) {
+  for (const table of ['categories','menu_items','product_option_groups','opening_hours']) {
     const previousRows = new Map(before[table].map(row => [row.id, row]));
     for (const row of next[table]) {
       const old = previousRows.get(row.id) || null;
