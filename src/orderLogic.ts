@@ -13,6 +13,7 @@ export function todayOrders(orders: Order[], now = new Date()) {
 
 export function canOrder(item: MenuItem, items: MenuItem[]) {
   if (!item.available || !item.categoryId) return false;
+  if ((item.optionGroups || []).some(group => group.options.filter(option => option.available).length < (group.required ? Math.max(1,group.min) : group.min))) return false;
   if (item.categoryId !== 'offers' && !item.includedItemIds?.length) return true;
   return Boolean(item.includedItemIds?.length) && item.includedItemIds!.every((id) =>
     items.some((part) => part.id === id && part.available && part.categoryId && part.categoryId !== 'offers'));

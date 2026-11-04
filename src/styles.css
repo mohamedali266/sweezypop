@@ -1947,6 +1947,7 @@ button {
   font-size: 0.72rem;
   font-weight: 600;
 }
+.cart-line.detailed>div:first-child{display:grid}.cart-line.detailed small{color:var(--muted);font-size:.72rem;line-height:1.35}.card-footer>strong small{color:var(--muted);font-size:.68rem;font-weight:750}
 
 .preparation-form-card {
   width: min(980px, 100%);

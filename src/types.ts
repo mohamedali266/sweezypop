@@ -18,6 +18,30 @@ export interface Category {
   sortOrder: number;
 }
 
+export type ProductOptionMode = 'single' | 'multiple';
+
+export interface ProductOption {
+  id: string;
+  name: Record<Locale, string>;
+  priceDelta: number;
+  available: boolean;
+}
+
+export interface ProductOptionGroup {
+  id: string;
+  name: Record<Locale, string>;
+  mode: ProductOptionMode;
+  required: boolean;
+  min: number;
+  max: number;
+  options: ProductOption[];
+}
+
+export interface ProductSelection {
+  groupId: string;
+  optionIds: string[];
+}
+
 export interface MenuItem {
   id: string;
   categoryId: string;
@@ -30,12 +54,15 @@ export interface MenuItem {
   available: boolean;
   sortOrder: number;
   includedItemIds?: string[];
+  optionGroups?: ProductOptionGroup[];
   preparation?: ItemPreparation;
 }
 
 export interface CartLine {
   item: MenuItem;
   quantity: number;
+  selections?: ProductSelection[];
+  lineKey?: string;
 }
 
 export interface Order {

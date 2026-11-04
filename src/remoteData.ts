@@ -1,4 +1,4 @@
-import type { AppUser, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, CartLine, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -299,6 +299,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       available: Boolean(item.available),
       sortOrder: item.sort_order || 0,
       includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
+      optionGroups: Array.isArray(item.option_groups) ? item.option_groups : [],
       preparation: {
         station: item.prep_station || 'kitchen',
         estimatedMinutes: Number(item.prep_minutes || 0),
@@ -368,7 +369,7 @@ function catalogRows(state: RemoteState, restaurantId: string): Record<string, R
     categories: state.categories.map(c => ({ id:c.id, restaurant_id:restaurantId, name_en:c.name.en, name_de:c.name.de, sort_order:c.sortOrder })),
     menu_items: state.items.map(i => ({ id:i.id, restaurant_id:restaurantId, category_id:i.categoryId, name_en:i.name.en, name_de:i.name.de,
       description_en:i.description.en, description_de:i.description.de, price:i.price, badge_en:i.badge?.en || null, badge_de:i.badge?.de || null,
-      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [],
+      image_style:i.imageStyle, image_url:i.imageUrl || null, available:i.available, sort_order:i.sortOrder, included_item_ids:i.includedItemIds || [], option_groups:i.optionGroups || [],
       prep_station:i.preparation?.station || 'kitchen', prep_minutes:i.preparation?.estimatedMinutes || 0,
       prep_ingredients_en:i.preparation?.ingredients.en || [], prep_ingredients_de:i.preparation?.ingredients.de || [],
       prep_tools_en:i.preparation?.tools.en || [], prep_tools_de:i.preparation?.tools.de || [],
@@ -402,7 +403,7 @@ export async function saveRemoteState(state: RemoteState, previous: RemoteState)
 export interface OrderInput {
   name: string;
   notes: string;
-  lines: { item: MenuItem; quantity: number }[];
+  lines: CartLine[];
   requestKey: string;
   source?: 'menu' | 'pos';
 }
@@ -424,7 +425,7 @@ export async function createRemoteOrder(input: OrderInput): Promise<Order> {
   if (!supabase) throw new Error('Bestellungen sind derzeit nicht verfuegbar.');
   const { data, error } = await supabase.rpc('place_order', {
     p_slug:restaurantSlug, p_request_key:input.requestKey, p_name:input.name.trim(), p_notes:input.notes.trim(),
-    p_lines:input.lines.map(line => ({ id:line.item.id, quantity:line.quantity })), p_source:input.source || 'menu',
+    p_lines:input.lines.map(line => ({ id:line.item.id, quantity:line.quantity, selections:line.selections || [] })), p_source:input.source || 'menu',
     p_client_token:input.source === 'pos' ? null : getOrderClientToken(),
   });
   if (error) throw error;
@@ -516,7 +517,7 @@ export interface OrderPageFilters {
 export interface OrderPage { rows: Order[]; total: number; page: number; pageSize: number; pageCount: number }
 export interface OrderWorkspaceStats { newCount: number; preparingCount: number; todayCount: number; todayRevenue: number }
 export interface OrderTimelineEvent { previousStatus: Order['status']; nextStatus: Order['status']; createdAt: string }
-export interface PosDraftLine { id: string; quantity: number }
+export interface PosDraftLine { id: string; quantity: number; selections?: import('./types').ProductSelection[] }
 export interface PosDraft { id: string; customerName: string; notes: string; lines: PosDraftLine[]; createdAt: string; updatedAt: string }
 
 export async function loadOrderPage(filters: OrderPageFilters): Promise<OrderPage> {

@@ -9,6 +9,8 @@ import { StaffGuideManagement } from './StaffGuideManagement';
 import { StaffWorkspace } from './StaffWorkspace';
 import { CashierWorkspace } from './CashierWorkspace';
 import { OrderJourney } from './OrderJourney';
+import { OptionGroupsEditor, ProductOptionsDialog } from './ProductOptions';
+import { activeOptionGroups, cartLineKey, configuredCartItem, selectionLabels } from './optionLogic';
 import { FooterManager, MenuFooter, ReviewsManager, ReviewsShowcase } from './Reviews';
 import { canOrder, euro, parsePrice, todayOrders } from './orderLogic';
 import {
@@ -17,6 +19,7 @@ import {
   CalendarClock,
   ChefHat,
   Check,
+  ChevronRight,
   ClipboardList,
   Copyright,
   CircleUserRound,
@@ -68,7 +71,7 @@ import {
   type RemoteState,
 } from './remoteData';
 import { isSupabaseConfigured, supabase } from './supabase';
-import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, SocialLink, ThemeSettings, UserRole } from './types';
+import type { AppUser, CartLine, Category, Locale, MenuItem, MenuLayout, OpeningHour, Order, ProductOptionGroup, ProductSelection, SocialLink, ThemeSettings, UserRole } from './types';
 
 type View = 'menu' | 'login' | 'owner' | 'admin' | 'staff' | 'cashier' | 'password-change';
 type DashboardSection = 'overview' | 'pos' | 'items' | 'categories' | 'offers' | 'appearance' | 'reviews' | 'footer' | 'hours' | 'orders' | 'staff-guide' | 'staff' | 'users';
@@ -757,32 +760,34 @@ function AppContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, remoteReady]);
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: MenuItem, selections: ProductSelection[] = []) => {
     if (!canOrder(item, items)) return;
+    const key = cartLineKey(item.id,selections);
+    const configuredItem = configuredCartItem(item,selections);
     setCart((current) => {
-      const existing = current.find((line) => line.item.id === item.id);
+      const existing = current.find((line) => (line.lineKey || cartLineKey(line.item.id,line.selections)) === key);
       if (existing) {
-        return current.map((line) => (line.item.id === item.id ? { ...line, quantity: Math.min(99,line.quantity + 1) } : line));
+        return current.map((line) => ((line.lineKey || cartLineKey(line.item.id,line.selections)) === key ? { ...line, quantity: Math.min(99,line.quantity + 1) } : line));
       }
-      return [...current, { item, quantity: 1 }];
+      return [...current, { item:configuredItem, quantity:1, selections, lineKey:key }];
     });
   };
 
-  const updateCartQuantity = (itemId: string, delta: number) => {
+  const updateCartQuantity = (lineKey: string, delta: number) => {
     setCart((current) =>
       current
-        .map((line) => (line.item.id === itemId ? { ...line, quantity: Math.min(99,line.quantity + delta) } : line))
+        .map((line) => ((line.lineKey || cartLineKey(line.item.id,line.selections)) === lineKey ? { ...line, quantity: Math.min(99,line.quantity + delta) } : line))
         .filter((line) => line.quantity > 0),
     );
   };
 
-  const removeCartLine = (itemId: string) => {
-    setCart((current) => current.filter((line) => line.item.id !== itemId));
+  const removeCartLine = (lineKey: string) => {
+    setCart((current) => current.filter((line) => (line.lineKey || cartLineKey(line.item.id,line.selections)) !== lineKey));
   };
 
   const submitOrder = async (payload: { name: string; notes: string }) => {
     if (!cart.length || orderInFlight.current) throw new Error('Bitte warten.');
-    const fingerprint = JSON.stringify({ ...payload, lines:cart.map(l => [l.item.id,l.quantity]) });
+    const fingerprint = JSON.stringify({ ...payload, lines:cart.map(l => [l.item.id,l.quantity,l.selections]) });
     if (requestAttempt.current?.fingerprint !== fingerprint) requestAttempt.current = { fingerprint, key:crypto.randomUUID() };
     orderInFlight.current = true;
     try {
@@ -1268,7 +1273,7 @@ function MenuPage(props: {
   query: string;
   setQuery: (query: string) => void;
   cart: CartLine[];
-  addToCart: (item: MenuItem) => void;
+  addToCart: (item: MenuItem, selections?: ProductSelection[]) => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
   submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
@@ -1283,6 +1288,8 @@ function MenuPage(props: {
   confirmTrackedOrderReceived: (rating: number | null, feedback: string) => Promise<void>;
   dismissTrackedOrder: () => void;
 }) {
+  const [configuringItem,setConfiguringItem] = useState<MenuItem | null>(null);
+  const requestAdd = (item:MenuItem) => activeOptionGroups(item).length ? setConfiguringItem(item) : props.addToCart(item);
   const filtered = useMemo(() => {
     return props.items
       .filter((item) => canOrder(item, props.items))
@@ -1342,12 +1349,12 @@ function MenuPage(props: {
           ))}
       </section>
 
-      {showFeaturedOffers && <FeaturedOffers offers={featuredOffers} items={props.items} locale={props.locale} onAdd={props.addToCart} />}
+      {showFeaturedOffers && <FeaturedOffers offers={featuredOffers} items={props.items} locale={props.locale} onAdd={requestAdd} />}
 
       <div className="menu-content single-column">
         <section id="menu-list" className={`items ${props.layout}`}>
           {visibleMenuItems.map((item) => (
-            <MenuCard key={item.id} item={item} locale={props.locale} layout={props.layout} onAdd={props.addToCart} />
+            <MenuCard key={item.id} item={item} locale={props.locale} layout={props.layout} onAdd={requestAdd} />
           ))}
         </section>
       </div>
@@ -1375,6 +1382,7 @@ function MenuPage(props: {
           onDismiss={props.dismissTrackedOrder}
         />
       )}
+      {configuringItem && <ProductOptionsDialog item={configuringItem} locale={props.locale} onClose={() => setConfiguringItem(null)} onConfirm={(selections) => { props.addToCart(configuringItem,selections); setConfiguringItem(null); }} />}
     </main>
   );
 }
@@ -1560,6 +1568,7 @@ function OfferDetailsModal({
 }
 
 function MenuCard({ item, locale, layout, onAdd }: { item: MenuItem; locale: Locale; layout: MenuLayout; onAdd: (item: MenuItem) => void }) {
+  const customizable=activeOptionGroups(item).length>0;
   return (
     <article className={`menu-card ${layout}`}>
       <div className={`food-art ${item.imageStyle} ${item.imageUrl ? 'has-image' : ''}`}>
@@ -1570,9 +1579,9 @@ function MenuCard({ item, locale, layout, onAdd }: { item: MenuItem; locale: Loc
         <h3>{item.name[locale]}</h3>
         <p>{itemDescription(item, locale)}</p>
         <div className="card-footer">
-          <strong>{currency.format(item.price)}</strong>
+          <strong>{customizable && <small>{locale === 'de' ? 'Ab ' : 'From '}</small>}{currency.format(item.price)}</strong>
           <button aria-label={`${t(locale, 'addToCart')} ${item.name[locale]}`} onClick={() => onAdd(item)}>
-            <Plus size={18} />
+            {customizable ? <ChevronRight size={18} /> : <Plus size={18} />}
           </button>
         </div>
       </div>
@@ -1638,26 +1647,29 @@ function CartPanel({
               </button>
             </div>
             <div className="cart-lines">
-              {cart.map((line) => (
-                <div key={line.item.id} className="cart-line detailed">
+              {cart.map((line) => {
+                const key=line.lineKey || cartLineKey(line.item.id,line.selections);
+                const labels=selectionLabels(line.item,line.selections || [],locale);
+                return <div key={key} className="cart-line detailed">
                   <div>
                     <strong>{line.item.name[locale]}</strong>
+                    {labels.length > 0 && <small>{labels.join(' · ')}</small>}
                     <span>{currency.format(line.item.price)}</span>
                   </div>
                   <div className="quantity-controls">
-                    <button onClick={() => updateCartQuantity(line.item.id, -1)} aria-label={`Decrease ${line.item.name[locale]}`}>
+                    <button onClick={() => updateCartQuantity(key, -1)} aria-label={`Decrease ${line.item.name[locale]}`}>
                       <Minus size={15} />
                     </button>
                     <strong>{line.quantity}</strong>
-                    <button onClick={() => updateCartQuantity(line.item.id, 1)} aria-label={`Increase ${line.item.name[locale]}`}>
+                    <button onClick={() => updateCartQuantity(key, 1)} aria-label={`Increase ${line.item.name[locale]}`}>
                       <Plus size={15} />
                     </button>
-                    <button className="danger" onClick={() => removeCartLine(line.item.id)} aria-label={`Remove ${line.item.name[locale]}`}>
+                    <button className="danger" onClick={() => removeCartLine(key)} aria-label={`Remove ${line.item.name[locale]}`}>
                       <Trash2 size={15} />
                     </button>
                   </div>
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
             <div className="cart-total">
               <span>{t(locale, 'total')}</span>
@@ -2176,12 +2188,13 @@ function ItemsManager({
     badgeDe: '',
     imageStyle: 'pink',
     available: true,
+    optionGroups: [] as ProductOptionGroup[],
   });
   const [formError, setFormError] = useState('');
 
   const emptyItemForm = () => ({
     nameEn: '', nameDe: '', descriptionEn: '', descriptionDe: '', categoryId: categories[0]?.id || '',
-    imageUrl: '', price: '', badgeEn: '', badgeDe: '', imageStyle: 'pink', available: true,
+    imageUrl: '', price: '', badgeEn: '', badgeDe: '', imageStyle: 'pink', available: true, optionGroups: [] as ProductOptionGroup[],
   });
 
   const openCreateItem = () => {
@@ -2197,6 +2210,7 @@ function ItemsManager({
       nameEn:item.name.en, nameDe:item.name.de, descriptionEn:item.description.en, descriptionDe:item.description.de,
       categoryId:item.categoryId, imageUrl:item.imageUrl || '', price:String(item.price), badgeEn:item.badge?.en || '',
       badgeDe:item.badge?.de || '', imageStyle:item.imageStyle, available:item.available,
+      optionGroups:item.optionGroups || [],
     });
     setFormError('');
     setFormOpen(true);
@@ -2257,6 +2271,11 @@ function ItemsManager({
       setFormError(t(locale, 'priceRequired'));
       return;
     }
+    const invalidOptions = form.optionGroups.some(group => !group.name.en.trim() || !group.name.de.trim() || !group.options.length || group.min < 0 || group.max < Math.max(group.required ? 1 : 0,group.min) || group.options.filter(option => option.available).length < (group.required ? Math.max(1,group.min) : group.min) || group.options.some(option => !option.name.en.trim() || !option.name.de.trim() || !Number.isFinite(option.priceDelta) || option.priceDelta < 0));
+    if (invalidOptions) {
+      setFormError(locale === 'de' ? 'Bitte alle Optionsgruppen vollständig und gültig ausfüllen.' : 'Complete every option group with valid names, limits and prices.');
+      return;
+    }
 
     const previous = editingItemId ? items.find(item => item.id === editingItemId) : undefined;
     const item: MenuItem = {
@@ -2274,6 +2293,7 @@ function ItemsManager({
       available: form.available,
       sortOrder: previous?.sortOrder || items.length + 1,
       includedItemIds: previous?.includedItemIds,
+      optionGroups: form.optionGroups,
       preparation: previous?.preparation,
     };
 
@@ -2460,6 +2480,8 @@ function ItemsManager({
                 </label>
               </div>
             </div>
+
+            <OptionGroupsEditor locale={locale} groups={form.optionGroups} onChange={(optionGroups) => setForm({...form,optionGroups})} />
 
             {formError && <p className="form-error">{formError}</p>}
             <div className="modal-actions">

@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql','202611040001_product_options.sql','202611040002_option_availability_guard.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -313,4 +313,23 @@ test('push subscriptions require the private tracking key and are isolated by or
   await db.query('select register_order_push($1,$2,$3::jsonb,$4)',[order.id,pushKey,JSON.stringify(subscription),'en']);
   const savedSubscription=(await db.query('select order_id,locale from order_push_subscriptions where order_id=$1',[order.id])).rows[0];
   assert.deepEqual(savedSubscription,{order_id:order.id,locale:'en'});
+});
+
+test('product options enforce required choices, trusted modifiers and immutable labels',async()=>{
+  const groups=[{id:'size',name:{en:'Size',de:'Größe'},mode:'single',required:true,min:1,max:1,options:[
+    {id:'small',name:{en:'Small',de:'Klein'},priceDelta:0,available:true},
+    {id:'large',name:{en:'Large',de:'Groß'},priceDelta:2.5,available:true},
+  ]},{id:'toppings',name:{en:'Toppings',de:'Extras'},mode:'multiple',required:false,min:0,max:2,options:[
+    {id:'lotus',name:{en:'Lotus',de:'Lotus'},priceDelta:1,available:true},
+    {id:'chocolate',name:{en:'Chocolate',de:'Schokolade'},priceDelta:.5,available:true},
+  ]}];
+  await db.query('update menu_items set option_groups=$1::jsonb where id=$2',[JSON.stringify(groups),'drink']);
+  const selected=[{groupId:'size',optionIds:['large']},{groupId:'toppings',optionIds:['lotus']}];
+  const order=await place(randomUUID(),[{id:'drink',quantity:2,selections:selected,price:.01}],'menu','options-client-0001');
+  assert.equal(order.total,13);
+  assert.match(order.lines[0].name_de,/Groß.*Lotus/);
+  await assert.rejects(place(randomUUID(),[{id:'drink',quantity:1,selections:[]}],'menu','options-client-0002'),/Option selection limit/);
+  await assert.rejects(place(randomUUID(),[{id:'drink',quantity:1,selections:[{groupId:'size',optionIds:['fake']}]}],'menu','options-client-0003'),/Option unavailable/);
+  await assert.rejects(place(randomUUID(),[{id:'drink',quantity:1,selections:[{groupId:'size',optionIds:['small']},{groupId:'toppings',optionIds:['lotus','chocolate','fake']}]}],'menu','options-client-0004'),/Option selection limit/);
+  await db.query("update menu_items set option_groups='[]'::jsonb where id='drink'");
 });

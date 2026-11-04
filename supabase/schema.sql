@@ -64,6 +64,7 @@ create table if not exists menu_items (
   image_url text,
   available boolean default true,
   included_item_ids text[] not null default '{}',
+  option_groups jsonb not null default '[]'::jsonb,
   prep_station text not null default 'kitchen',
   prep_minutes integer not null default 0 check (prep_minutes between 0 and 240),
   prep_ingredients_en text[] not null default '{}',
@@ -117,6 +118,7 @@ create table if not exists order_lines (
   unit_price numeric(10, 2) not null check (unit_price >= 0),
   name_en text,
   name_de text
+  ,selected_options jsonb not null default '[]'::jsonb
 );
 
 create table if not exists staff_shifts (

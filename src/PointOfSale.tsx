@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Check, Eraser, Maximize2, Minimize2, Minus, Plus, Printer, RefreshCw, Search, ShoppingBag, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import type { CartLine, Category, Locale, MenuItem, Order, ThemeSettings } from './types';
+import type { CartLine, Category, Locale, MenuItem, Order, ProductSelection, ThemeSettings } from './types';
 import { createRemoteOrder, deletePosDraft, loadPosDrafts, savePosDraft, type PosDraft } from './remoteData';
 import { canOrder } from './orderLogic';
+import { ProductOptionsDialog } from './ProductOptions';
+import { activeOptionGroups, cartLineKey, configuredCartItem, selectionLabels } from './optionLogic';
 import './pos.css';
 
 const copy = {
@@ -109,6 +111,7 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const [draftsOpen,setDraftsOpen]=useState(false);
   const [confirmClear,setConfirmClear]=useState(false);
   const [notice,setNotice]=useState('');
+  const [configuringItem,setConfiguringItem]=useState<MenuItem|null>(null);
   const text = copy[locale];
   const attempt = useRef<{ fingerprint:string; key:string } | null>(null);
   const lock = useRef(false);
@@ -117,16 +120,18 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const total = cart.reduce((sum,line) => sum + Math.round(line.item.price*100)*line.quantity,0)/100;
   const itemCount=cart.reduce((sum,line)=>sum+line.quantity,0);
   const portalTarget=focusMode&&rootRef.current?rootRef.current:document.body;
-  const add = (item:MenuItem) => {
+  const add = (item:MenuItem,selections:ProductSelection[] = []) => {
     if (busy) return;
     setSaved(null);
-    setCart(current => current.some(l => l.item.id===item.id) ? current.map(l => l.item.id===item.id ? {...l,quantity:Math.min(99,l.quantity+1)} : l) : [...current,{item,quantity:1}]);
+    const key=cartLineKey(item.id,selections); const configuredItem=configuredCartItem(item,selections);
+    setCart(current => current.some(l => (l.lineKey||cartLineKey(l.item.id,l.selections))===key) ? current.map(l => (l.lineKey||cartLineKey(l.item.id,l.selections))===key ? {...l,quantity:Math.min(99,l.quantity+1)} : l) : [...current,{item:configuredItem,quantity:1,selections,lineKey:key}]);
   };
-  const quantity = (id:string,delta:number) => setCart(current => current.map(l => l.item.id===id ? {...l,quantity:Math.min(99,l.quantity+delta)} : l).filter(l => l.quantity>0));
+  const requestAdd=(item:MenuItem)=>activeOptionGroups(item).length?setConfiguringItem(item):add(item);
+  const quantity = (key:string,delta:number) => setCart(current => current.map(l => (l.lineKey||cartLineKey(l.item.id,l.selections))===key ? {...l,quantity:Math.min(99,l.quantity+delta)} : l).filter(l => l.quantity>0));
   const submit = async () => {
     if (lock.current || !cart.length) return;
     if (!name.trim()) { setError(text.nameRequired); return; }
-    const fingerprint = JSON.stringify({name:name.trim(),notes:notes.trim(),lines:cart.map(l => [l.item.id,l.quantity])});
+    const fingerprint = JSON.stringify({name:name.trim(),notes:notes.trim(),lines:cart.map(l => [l.item.id,l.quantity,l.selections])});
     if (attempt.current?.fingerprint!==fingerprint) attempt.current={fingerprint,key:crypto.randomUUID()};
     lock.current=true; setBusy(true); setError('');
     try {
@@ -141,11 +146,11 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const holdOrder=async()=>{
     if(!cart.length)return;
     setBusy(true);setError('');
-    try{await savePosDraft({customerName:name.trim(),notes:notes.trim(),lines:cart.map(line=>({id:line.item.id,quantity:line.quantity}))});resetOrder();setNotice(text.draftSaved);await refreshDrafts();}
+    try{await savePosDraft({customerName:name.trim(),notes:notes.trim(),lines:cart.map(line=>({id:line.item.id,quantity:line.quantity,selections:line.selections||[]}))});resetOrder();setNotice(text.draftSaved);await refreshDrafts();}
     catch{setError(text.submitFailed);}finally{setBusy(false);}
   };
   const resumeDraft=async(draft:PosDraft)=>{
-    const next=draft.lines.flatMap(line=>{const item=available.find(candidate=>candidate.id===line.id);return item?[{item,quantity:line.quantity}]:[];});
+    const next=draft.lines.flatMap(line=>{const item=available.find(candidate=>candidate.id===line.id);const selections=line.selections||[];return item?[{item:configuredCartItem(item,selections),quantity:line.quantity,selections,lineKey:cartLineKey(item.id,selections)}]:[];});
     setCart(next);setName(draft.customerName);setNotes(draft.notes);setSaved(null);setDraftsOpen(false);setBasketOpen(true);
     if(next.length!==draft.lines.length)setNotice(text.unavailableRemoved);
     try{await deletePosDraft(draft.id);await refreshDrafts();}catch{setError(text.submitFailed);}
@@ -180,8 +185,8 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
       <nav className="pos-categories" aria-label={text.categories}><button aria-pressed={category==='all'} onClick={() => setCategory('all')}>{text.all}</button>{categories.map(c => <button key={c.id} aria-pressed={category===c.id} onClick={() => setCategory(c.id)}>{c.name[locale]}</button>)}</nav>
       <div className="pos-products">{visible.map(item => {
         const selectedLine = cart.find(line => line.item.id === item.id);
-        return <button className={`pos-product${selectedLine ? ' selected' : ''}`} aria-pressed={Boolean(selectedLine)} key={item.id} disabled={busy} onClick={() => add(item)}>
-          {selectedLine && <span className="pos-product-quantity" aria-label={`${selectedLine.quantity} ${locale === 'de' ? 'in der Bestellung' : 'in order'}`}>{selectedLine.quantity}</span>}
+        return <button className={`pos-product${selectedLine ? ' selected' : ''}`} aria-pressed={Boolean(selectedLine)} key={item.id} disabled={busy} onClick={() => requestAdd(item)}>
+          {selectedLine && <span className="pos-product-quantity" aria-label={`${cart.filter(line=>line.item.id===item.id).reduce((sum,line)=>sum+line.quantity,0)} ${locale === 'de' ? 'in der Bestellung' : 'in order'}`}>{cart.filter(line=>line.item.id===item.id).reduce((sum,line)=>sum+line.quantity,0)}</span>}
           {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : <span className="pos-no-image"><ShoppingBag size={26} /></span>}
           <strong>{item.name[locale]}</strong><span>{formatEuro(item.price, locale)}<Plus size={17} /></span>
         </button>;
@@ -191,10 +196,10 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
     <aside className={`pos-basket ${basketOpen ? 'open' : ''}`} aria-label={text.currentOrder}>
       <header><h2>{text.currentOrder}</h2><span>{cart.reduce((sum,l) => sum+l.quantity,0)} {text.selectedItems}</span><button className="pos-basket-close" aria-label={text.closeOrder} onClick={() => setBasketOpen(false)}><X size={19} /></button></header>
       {!cart.length && !saved && <div className="pos-empty"><ShoppingBag size={32} /><p>{text.noneSelected}</p></div>}
-      <fieldset disabled={busy} className="pos-fields"><div className="pos-lines">{cart.map(line => <div className="pos-line" key={line.item.id}>
-        <div><strong>{line.item.name[locale]}</strong><span>{formatEuro(line.item.price*line.quantity, locale)}</span></div>
-        <div className="pos-quantity"><button aria-label={`${line.item.name[locale]}: ${text.less}`} onClick={() => quantity(line.item.id,-1)}><Minus size={16} /></button><output>{line.quantity}</output><button aria-label={`${line.item.name[locale]}: ${text.more}`} onClick={() => quantity(line.item.id,1)}><Plus size={16} /></button><button aria-label={`${line.item.name[locale]}: ${text.remove}`} onClick={() => setCart(cart.filter(l => l.item.id!==line.item.id))}><Trash2 size={16} /></button></div>
-      </div>)}</div>
+      <fieldset disabled={busy} className="pos-fields"><div className="pos-lines">{cart.map(line => {const key=line.lineKey||cartLineKey(line.item.id,line.selections);const labels=selectionLabels(line.item,line.selections||[],locale);return <div className="pos-line" key={key}>
+        <div><strong>{line.item.name[locale]}</strong>{labels.length>0&&<small>{labels.join(' · ')}</small>}<span>{formatEuro(line.item.price*line.quantity, locale)}</span></div>
+        <div className="pos-quantity"><button aria-label={`${line.item.name[locale]}: ${text.less}`} onClick={() => quantity(key,-1)}><Minus size={16} /></button><output>{line.quantity}</output><button aria-label={`${line.item.name[locale]}: ${text.more}`} onClick={() => quantity(key,1)}><Plus size={16} /></button><button aria-label={`${line.item.name[locale]}: ${text.remove}`} onClick={() => setCart(cart.filter(l => (l.lineKey||cartLineKey(l.item.id,l.selections))!==key))}><Trash2 size={16} /></button></div>
+      </div>;})}</div>
       <label>{text.name}<input maxLength={120} value={name} onChange={e => setName(e.target.value)} autoComplete="off" /></label>
       <label>{text.notes} <small>({text.optional})</small><textarea maxLength={2000} rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label>
       </fieldset>
@@ -208,5 +213,6 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
     {draftsOpen&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.heldOrders}><section className="pos-drafts"><header><h2>{text.heldOrders}</h2><button aria-label={text.close} onClick={()=>setDraftsOpen(false)}><X/></button></header>{drafts.length?<div>{drafts.map(draft=><article key={draft.id}><div><strong>{draft.customerName||`#${draft.id.slice(0,8)}`}</strong><small>{receiptDate(draft.updatedAt,locale)} · {draft.lines.reduce((sum,line)=>sum+line.quantity,0)} {text.selectedItems}</small></div><button onClick={()=>void resumeDraft(draft)}>{text.resume}</button></article>)}</div>:<p className="pos-empty">{text.noDrafts}</p>}</section></div>,portalTarget)}
     {confirmClear&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.confirmClear}><section className="pos-confirm-dialog"><h2>{text.confirmClear}</h2><div><button onClick={()=>setConfirmClear(false)}>{text.keep}</button><button className="danger" onClick={()=>{resetOrder();setConfirmClear(false);}}>{text.clearOrder}</button></div></section></div>,portalTarget)}
     {saved&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.successTitle}><section className="pos-success"><span><Check size={34}/></span><h2>{text.successTitle}</h2><p>{text.successText}</p><strong>#{saved.orderNumber||saved.id}</strong><b>{formatEuro(saved.total,locale)}</b><div><OrderReceipt order={saved} siteName={theme.siteName} locale={locale}/><button onClick={resetOrder}><RefreshCw size={18}/>{text.startNext}</button></div></section></div>,portalTarget)}
+    {configuringItem&&createPortal(<ProductOptionsDialog item={configuringItem} locale={locale} onClose={()=>setConfiguringItem(null)} onConfirm={(selections)=>{add(configuringItem,selections);setConfiguringItem(null);}}/>,portalTarget)}
   </section>;
 }
