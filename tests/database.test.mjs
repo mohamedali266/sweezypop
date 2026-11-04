@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql','202611040001_product_options.sql','202611040002_option_availability_guard.sql','202611040003_shared_product_options.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql','202611040001_product_options.sql','202611040002_option_availability_guard.sql','202611040003_shared_product_options.sql','202611040004_size_base_price_guard.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -347,5 +347,6 @@ test('product sizes use final server prices and reusable groups link by category
   assert.equal(order.total,13.5);
   assert.match(order.lines[0].name_de,/Groß.*Sahne/);
   await assert.rejects(place(randomUUID(),[{id:'drink',quantity:1,selections:[{groupId:'extras',optionIds:['cream']}]}],'menu','shared-options-client-0002'),/Option selection limit/);
+  await assert.rejects(db.query("update menu_items set price=4 where id='drink'"),/size_base_price/);
   await db.exec("update product_option_groups set active=false where id='extras'; update menu_items set sizes='[]'::jsonb where id='drink'");
 });
