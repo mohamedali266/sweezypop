@@ -1320,7 +1320,31 @@ function MenuPage(props: {
   const today = props.hours.find((hour) => hour.day === day && hour.enabled);
   const featuredOffers = filtered.filter(isOfferItem);
   const showFeaturedOffers = featuredOffers.length > 0 && (props.activeCategory === 'all' || props.activeCategory === 'offers');
-  const visibleMenuItems = props.activeCategory === 'all' ? filtered.filter((item) => !isOfferItem(item)) : props.activeCategory === 'offers' ? [] : filtered;
+  const visibleMenuItems = useMemo(() => {
+    if (props.activeCategory === 'offers') return [];
+    const menuItems = filtered.filter((item) => !isOfferItem(item));
+    if (props.activeCategory !== 'all') return menuItems;
+
+    const categoryIds = props.categories
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((category) => category.id);
+    const knownCategoryIds = new Set(categoryIds);
+    const uncategorizedIds = menuItems
+      .map((item) => item.categoryId)
+      .filter((categoryId, index, values) => !knownCategoryIds.has(categoryId) && values.indexOf(categoryId) === index);
+    const buckets = [...categoryIds, ...uncategorizedIds]
+      .map((categoryId) => menuItems.filter((item) => item.categoryId === categoryId));
+    const interleaved: MenuItem[] = [];
+    const largestCategory = Math.max(0, ...buckets.map((bucket) => bucket.length));
+
+    for (let itemIndex = 0; itemIndex < largestCategory; itemIndex += 1) {
+      buckets.forEach((bucket) => {
+        if (bucket[itemIndex]) interleaved.push(bucket[itemIndex]);
+      });
+    }
+    return interleaved;
+  }, [filtered, props.activeCategory, props.categories]);
 
   return (
     <main className="menu-shell">
@@ -1499,7 +1523,6 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
       startScrollLeft: track.scrollLeft,
       moved: false,
     };
-    track.setPointerCapture(event.pointerId);
   };
 
   const moveOffersDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1510,6 +1533,7 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
     if (Math.abs(distance) > 6) {
       drag.moved = true;
       suppressOfferClickRef.current = true;
+      if (!track.hasPointerCapture(event.pointerId)) track.setPointerCapture(event.pointerId);
       track.classList.add('is-dragging');
     }
     if (drag.moved) {

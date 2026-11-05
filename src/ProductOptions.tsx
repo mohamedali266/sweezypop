@@ -34,10 +34,11 @@ export function ProductOptionsDialog({ item, locale, onClose, onConfirm }: { ite
         const picked = selections.find(value => value.groupId === group.id)?.optionIds || [];
         const minimum = group.required ? Math.max(1,group.min) : group.min;
         const visibleOptions = group.id === '__size__' ? group.options : group.options.filter(option => option.available);
-        return <fieldset key={group.id}><legend><span>{index+1}</span><div><strong>{group.name[locale]}</strong><small>{group.mode === 'single' ? (locale === 'de' ? 'Eine Option wählen' : 'Choose one') : `${locale === 'de' ? 'Bis zu' : 'Up to'} ${group.max}`}</small></div>{minimum > 0 && <b>{locale === 'de' ? 'Pflicht' : 'Required'}</b>}</legend><div className="product-option-list">{visibleOptions.map(option => {
+        const headingId = `product-option-group-${group.id}`;
+        return <section className="product-option-group" aria-labelledby={headingId} key={group.id}><header className="product-option-heading"><span>{index+1}</span><div><strong id={headingId}>{group.name[locale]}</strong><small>{group.mode === 'single' ? (locale === 'de' ? 'Eine Option wählen' : 'Choose one') : `${locale === 'de' ? 'Bis zu' : 'Up to'} ${group.max}`}</small></div>{minimum > 0 && <b>{locale === 'de' ? 'Pflicht' : 'Required'}</b>}</header><div className="product-option-list">{visibleOptions.map(option => {
           const active = picked.includes(option.id);
           return <button type="button" disabled={!option.available} className={active ? 'active' : ''} aria-pressed={active} key={option.id} onClick={() => choose(group,option.id)}><span>{active ? <Check /> : <ChevronRight />}</span><strong>{option.name[locale] || option.name.en}</strong><em>{!option.available ? (locale === 'de' ? 'Nicht verfügbar' : 'Unavailable') : option.priceDelta ? `+ ${money(option.priceDelta,locale)}` : (locale === 'de' ? 'inklusive' : 'included')}</em></button>;
-        })}</div></fieldset>;
+        })}</div></section>;
       })}</div>
       <footer><div><span>{locale === 'de' ? 'Artikelpreis' : 'Item total'}</span><strong>{money(configuredPrice(item,selections),locale)}</strong></div><button type="button" disabled={!result.valid} onClick={() => onConfirm(result.selections)}><Plus />{locale === 'de' ? 'Zur Bestellung' : 'Add to order'}</button></footer>
     </section>

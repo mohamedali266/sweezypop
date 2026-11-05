@@ -888,7 +888,7 @@ button {
 
 .offer-card {
   display: grid;
-  flex: 0 0 clamp(390px, 46vw, 560px);
+  flex: 0 0 clamp(360px, 42vw, 500px);
   grid-template-columns: minmax(150px, 0.52fr) minmax(0, 1fr);
   overflow: hidden;
   min-height: 190px;
@@ -2931,7 +2931,7 @@ button {
   }
 
   .offer-card {
-    flex-basis: min(88vw, 390px);
+    flex-basis: min(360px, calc(100% - 48px));
     grid-template-columns: minmax(118px, 42%) minmax(0, 1fr);
     min-height: 172px;
     border-radius: 16px;
