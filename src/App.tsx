@@ -1,5 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -1485,6 +1485,49 @@ function SocialLinksModal({ locale, links, onClose }: { locale: Locale; links: S
 
 function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; items: MenuItem[]; locale: Locale; onAdd: (item: MenuItem) => void }) {
   const [selectedOffer, setSelectedOffer] = useState<MenuItem | null>(null);
+  const offersTrackRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, moved: false });
+  const suppressOfferClickRef = useRef(false);
+
+  const startOffersDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const track = offersTrackRef.current;
+    if (!track) return;
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: track.scrollLeft,
+      moved: false,
+    };
+    track.setPointerCapture(event.pointerId);
+  };
+
+  const moveOffersDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const track = offersTrackRef.current;
+    const drag = dragStateRef.current;
+    if (!track || drag.pointerId !== event.pointerId) return;
+    const distance = event.clientX - drag.startX;
+    if (Math.abs(distance) > 6) {
+      drag.moved = true;
+      suppressOfferClickRef.current = true;
+      track.classList.add('is-dragging');
+    }
+    if (drag.moved) {
+      event.preventDefault();
+      track.scrollLeft = drag.startScrollLeft - distance;
+    }
+  };
+
+  const finishOffersDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const track = offersTrackRef.current;
+    if (!track || dragStateRef.current.pointerId !== event.pointerId) return;
+    if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
+    track.classList.remove('is-dragging');
+    const moved = dragStateRef.current.moved;
+    dragStateRef.current.pointerId = -1;
+    if (!moved) suppressOfferClickRef.current = false;
+    else window.setTimeout(() => { suppressOfferClickRef.current = false; }, 0);
+  };
 
   return (
     <section className="featured-offers" aria-label={t(locale, 'specialOffers')}>
@@ -1495,7 +1538,21 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
         </div>
         <span className="count-pill">{offers.length}</span>
       </div>
-      <div className="offer-menu-grid">
+      <div
+        ref={offersTrackRef}
+        className="offer-menu-grid"
+        aria-label={t(locale, 'specialOffers')}
+        onPointerDown={startOffersDrag}
+        onPointerMove={moveOffersDrag}
+        onPointerUp={finishOffersDrag}
+        onPointerCancel={finishOffersDrag}
+        onClickCapture={(event) => {
+          if (!suppressOfferClickRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          suppressOfferClickRef.current = false;
+        }}
+      >
         {offers.map((offer) => (
           <OfferCard key={offer.id} offer={offer} locale={locale} onOpen={setSelectedOffer} />
         ))}
@@ -1509,7 +1566,7 @@ function OfferCard({ offer, locale, onOpen }: { offer: MenuItem; locale: Locale;
   return (
     <button type="button" className="offer-card" onClick={() => onOpen(offer)}>
       <div className={`offer-card-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
-        {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} loading="lazy" /> : <BadgeDollarSign size={38} />}
+        {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} loading="lazy" draggable="false" /> : <BadgeDollarSign size={38} />}
         {offer.badge && <span>{offer.badge[locale]}</span>}
       </div>
       <div className="offer-card-body">
@@ -1517,7 +1574,10 @@ function OfferCard({ offer, locale, onOpen }: { offer: MenuItem; locale: Locale;
           <h3>{offer.name[locale]}</h3>
           <p>{itemDescription(offer, locale)}</p>
         </div>
-        <strong>{currency.format(offer.price)}</strong>
+        <div className="offer-card-meta">
+          <strong>{currency.format(offer.price)}</strong>
+          <span>{locale === 'de' ? 'Ansehen' : 'View offer'} <ChevronRight size={16} /></span>
+        </div>
       </div>
     </button>
   );

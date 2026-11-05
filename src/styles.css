@@ -861,13 +861,34 @@ button {
 }
 
 .offer-menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  display: flex;
   gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 14px;
+  cursor: grab;
+  scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+}
+
+.offer-menu-grid::-webkit-scrollbar {
+  display: none;
+}
+
+.offer-menu-grid.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+  scroll-snap-type: none;
 }
 
 .offer-card {
   display: grid;
+  flex: 0 0 clamp(390px, 46vw, 560px);
   grid-template-columns: minmax(150px, 0.52fr) minmax(0, 1fr);
   overflow: hidden;
   min-height: 190px;
@@ -879,6 +900,8 @@ button {
   box-shadow: 0 16px 38px rgba(87, 66, 111, 0.1);
   animation: rise-in 460ms cubic-bezier(0.2, 0.78, 0.22, 1) both;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .offer-card:hover {
@@ -913,6 +936,24 @@ button {
 
 .offer-card-body strong {
   font-size: 1.15rem;
+}
+
+.offer-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--border), transparent 25%);
+}
+
+.offer-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-size: .78rem;
+  font-weight: 850;
 }
 
 .menu-card-body {
@@ -2875,14 +2916,43 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .offer-card,
   .admin-offer-card {
     grid-template-columns: 1fr;
   }
 
-  .offer-card-media,
   .admin-offer-media {
     min-height: 190px;
+  }
+
+  .offer-menu-grid {
+    gap: 12px;
+    margin-inline: -2px;
+    padding-bottom: 10px;
+  }
+
+  .offer-card {
+    flex-basis: min(88vw, 390px);
+    grid-template-columns: minmax(118px, 42%) minmax(0, 1fr);
+    min-height: 172px;
+    border-radius: 16px;
+  }
+
+  .offer-card-media {
+    min-height: 172px;
+  }
+
+  .offer-card-body {
+    gap: 12px;
+    padding: 15px;
+  }
+
+  .offer-card-body p {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    margin-top: 6px;
+    line-height: 1.45;
   }
 
   .featured-offers {
