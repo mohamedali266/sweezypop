@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
@@ -30,6 +30,7 @@ import {
   FileSpreadsheet,
   GripVertical,
   Image,
+  ImageUp,
   LayoutGrid,
   LayoutDashboard,
   List,
@@ -186,6 +187,8 @@ function normalizeThemeSettings(value: unknown): ThemeSettings {
       : defaultTheme.socialLinks,
     phoneCountryCode: theme.phoneCountryCode || defaultTheme.phoneCountryCode,
     phoneNumber: theme.phoneNumber || '',
+    appIconUrl: theme.appIconUrl || '',
+    faviconUrl: theme.faviconUrl || '',
     reviewsVisible: theme.reviewsVisible !== false,
     footerCopyright: {
       en: theme.footerCopyright?.en || defaultTheme.footerCopyright.en,
@@ -222,7 +225,7 @@ function SocialAppIcon({ link }: { link: SocialLink }) {
 
 function BrandMark({ theme }: { theme: ThemeSettings }) {
   return (
-    <span className="brand-mark">
+    <span className={`brand-mark${theme.logoUrl ? ' has-image' : ''}`}>
       {theme.logoUrl ? <img src={theme.logoUrl} alt={`${theme.siteName} logo`} /> : theme.logoText.slice(0, 1).toUpperCase()}
     </span>
   );
@@ -362,7 +365,7 @@ function AppContent() {
     if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
       new Notification(locale === 'de' ? `Bestellung #${order.orderNumber}` : `Order #${order.orderNumber}`, {
         body: message,
-        icon: theme.logoUrl || '/pwa-icon.svg',
+        icon: theme.appIconUrl || '/pwa-icon-192.png',
         tag: `order-${order.id}`,
       });
     }
@@ -462,11 +465,6 @@ function AppContent() {
   };
 
   useEffect(() => {
-    const loaderTimer = window.setTimeout(() => setShowLoader(false), 3000);
-    return () => window.clearTimeout(loaderTimer);
-  }, []);
-
-  useEffect(() => {
     document.title = `${theme.siteName} ${authRole ? 'Dashboard' : 'Menu'}`;
     let appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
     if (!appleIcon) {
@@ -474,9 +472,50 @@ function AppContent() {
       appleIcon.rel = 'apple-touch-icon';
       document.head.appendChild(appleIcon);
     }
-    appleIcon.href = theme.logoUrl || '/pwa-icon-192.png';
+    const appIcon = theme.appIconUrl || '/pwa-icon-512.png';
+    appleIcon.href = appIcon;
+
+    let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
+    }
+    favicon.href = theme.faviconUrl || theme.appIconUrl || '/pwa-icon.svg';
+
+    let manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (!manifest) {
+      manifest = document.createElement('link');
+      manifest.rel = 'manifest';
+      document.head.appendChild(manifest);
+    }
+    const manifestData = {
+      name: `${theme.siteName} Menu`,
+      short_name: theme.siteName,
+      description: 'Restaurant menu, ordering and live order tracking.',
+      lang: locale,
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+      background_color: theme.background,
+      theme_color: theme.primary,
+      icons: theme.appIconUrl
+        ? [
+            { src: theme.appIconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: theme.appIconUrl, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ]
+        : [
+            { src: '/pwa-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/pwa-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/pwa-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+    };
+    const manifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' }));
+    manifest.href = manifestUrl;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.primary);
-  }, [authRole, theme.logoUrl, theme.primary, theme.siteName]);
+    return () => URL.revokeObjectURL(manifestUrl);
+  }, [authRole, locale, theme.appIconUrl, theme.background, theme.faviconUrl, theme.primary, theme.siteName]);
 
   useEffect(() => {
     const standalone = window.matchMedia('(display-mode: standalone)').matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
@@ -905,7 +944,7 @@ function AppContent() {
         } as CSSProperties
       }
     >
-      {showLoader && <LoaderScreen />}
+      {showLoader && <LoaderScreen onComplete={() => setShowLoader(false)} />}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
       {showInstallBanner && !isStandalone && (authRole || view === 'menu') && (
         <InstallAppBanner
@@ -1051,10 +1090,39 @@ function App() {
   );
 }
 
-function LoaderScreen() {
+function LoaderScreen({ onComplete }: { onComplete: () => void }) {
+  const [leaving, setLeaving] = useState(false);
+  const completed = useRef(false);
+  const timers = useRef<number[]>([]);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  const finish = useCallback((delay: number) => {
+    if (completed.current) return;
+    completed.current = true;
+    timers.current.push(window.setTimeout(() => {
+      setLeaving(true);
+      timers.current.push(window.setTimeout(() => onCompleteRef.current(), 360));
+    }, delay));
+  }, []);
+
+  useEffect(() => {
+    const activeTimers = timers.current;
+    activeTimers.push(window.setTimeout(() => finish(0), 15_000));
+    return () => activeTimers.forEach(window.clearTimeout);
+  }, [finish]);
+
   return (
-    <div className="app-loader" role="status" aria-label="Loading Sweezypop">
-      <img src="/sweezypop-loader-v3.svg" alt="SweezyPop by Ammaro" />
+    <div className={`app-loader${leaving ? ' is-leaving' : ''}`} role="status" aria-label="Loading Sweezypop">
+      <img
+        src="/sweezypop-loader-brand.svg"
+        alt="SweezyPop"
+        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 6400)}
+        onError={() => finish(600)}
+      />
     </div>
   );
 }
@@ -2929,6 +2997,112 @@ function OffersManager({
   );
 }
 
+type BrandAssetKind = 'website' | 'app' | 'favicon';
+
+function imageDimensions(source: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = reject;
+    image.src = source;
+  });
+}
+
+function fileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function BrandAssetUpload({
+  locale,
+  title,
+  description,
+  dimensions,
+  value,
+  kind,
+  onChange,
+}: {
+  locale: Locale;
+  title: string;
+  description: string;
+  dimensions: string;
+  value: string;
+  kind: BrandAssetKind;
+  onChange: (value: string) => void;
+}) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const accept = kind === 'app' ? 'image/png' : 'image/png,image/jpeg,image/webp,image/svg+xml';
+
+  const selectFile = async (file: File) => {
+    setError('');
+    setBusy(true);
+    try {
+      const allowed = kind === 'app'
+        ? file.type === 'image/png'
+        : ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type);
+      if (!allowed || file.size > 2_000_000) throw new Error(locale === 'de' ? 'Bitte ein passendes Bild bis 2 MB waehlen.' : 'Choose a supported image up to 2 MB.');
+
+      const source = await fileAsDataUrl(file);
+      if (file.type !== 'image/svg+xml') {
+        const size = await imageDimensions(source);
+        if (kind === 'app' && (size.width !== size.height || size.width < 512)) {
+          throw new Error(locale === 'de' ? 'Das App-Logo muss quadratisch und mindestens 512 x 512 px gross sein.' : 'The app logo must be square and at least 512 x 512 px.');
+        }
+        if (kind === 'favicon' && (size.width !== size.height || size.width < 64)) {
+          throw new Error(locale === 'de' ? 'Das Browser-Icon muss quadratisch und mindestens 64 x 64 px gross sein.' : 'The browser icon must be square and at least 64 x 64 px.');
+        }
+      }
+      onChange(source);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t(locale, 'imageFileRequired'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className={`brand-asset-card ${kind}`}>
+      <div className="brand-asset-preview">
+        {value ? <img src={value} alt="" /> : <Image size={30} aria-hidden="true" />}
+      </div>
+      <div className="brand-asset-copy">
+        <div>
+          <strong>{title}</strong>
+          <span className="brand-asset-size">{dimensions}</span>
+        </div>
+        <p>{description}</p>
+        {error && <small className="form-error" role="alert">{error}</small>}
+        <div className="brand-asset-actions">
+          <label className="small-action neutral upload-button">
+            <ImageUp size={16} />
+            {busy ? (locale === 'de' ? 'Wird geprueft...' : 'Checking...') : value ? (locale === 'de' ? 'Ersetzen' : 'Replace') : (locale === 'de' ? 'Bild waehlen' : 'Choose image')}
+            <input
+              type="file"
+              accept={accept}
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) void selectFile(file);
+                event.currentTarget.value = '';
+              }}
+            />
+          </label>
+          {value && (
+            <button type="button" className="icon-button subtle" title={locale === 'de' ? 'Entfernen' : 'Remove'} onClick={() => onChange('')}>
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function AppearanceSettings({
   locale,
   theme,
@@ -2950,6 +3124,10 @@ function AppearanceSettings({
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+
+  const updateBrandAsset = (key: 'logoUrl' | 'appIconUrl' | 'faviconUrl', value: string) => {
+    setDraftTheme((current) => ({ ...current, [key]: value }));
+  };
 
   useEffect(() => {
     setDraftTheme(theme);
@@ -3048,13 +3226,35 @@ function AppearanceSettings({
                 {t(locale, 'logoText')}
                 <input value={draftTheme.logoText} onChange={(event) => setDraftTheme({ ...draftTheme, logoText: event.target.value })} />
               </label>
-              <label>
-                {t(locale, 'logoImageUrl')}
-                <span className="input-with-icon">
-                  <Image size={18} />
-                  <input value={draftTheme.logoUrl} onChange={(event) => setDraftTheme({ ...draftTheme, logoUrl: event.target.value })} placeholder="https://..." />
-                </span>
-              </label>
+            </div>
+            <div className="brand-assets" aria-label={locale === 'de' ? 'Markenbilder' : 'Brand images'}>
+              <BrandAssetUpload
+                locale={locale}
+                title={locale === 'de' ? 'Website-Logo' : 'Website logo'}
+                description={locale === 'de' ? 'Wird in Navigation, Anmeldung und Arbeitsbereichen angezeigt.' : 'Used in navigation, login, and workspace branding.'}
+                dimensions="600 x 200 px (3:1) or SVG"
+                value={draftTheme.logoUrl}
+                kind="website"
+                onChange={(value) => updateBrandAsset('logoUrl', value)}
+              />
+              <BrandAssetUpload
+                locale={locale}
+                title={locale === 'de' ? 'App-Logo' : 'App logo'}
+                description={locale === 'de' ? 'Wird fuer die installierte PWA und den iPhone-Startbildschirm verwendet.' : 'Used for the installed PWA and iPhone home screen.'}
+                dimensions="512 x 512 px PNG"
+                value={draftTheme.appIconUrl}
+                kind="app"
+                onChange={(value) => updateBrandAsset('appIconUrl', value)}
+              />
+              <BrandAssetUpload
+                locale={locale}
+                title={locale === 'de' ? 'Browser-Icon' : 'Browser tab icon'}
+                description={locale === 'de' ? 'Wird als kleines Symbol im Browser-Tab angezeigt.' : 'Used as the small icon in the browser tab.'}
+                dimensions="64 x 64 px PNG or SVG"
+                value={draftTheme.faviconUrl}
+                kind="favicon"
+                onChange={(value) => updateBrandAsset('faviconUrl', value)}
+              />
             </div>
           </>
         )}

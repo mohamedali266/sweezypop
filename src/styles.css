@@ -48,7 +48,13 @@ button {
   display: grid;
   place-items: center;
   background: white;
-  animation: loader-fade 360ms ease 2.72s forwards;
+  opacity: 1;
+  transition: opacity 360ms ease, visibility 360ms ease;
+}
+
+.app-loader.is-leaving {
+  visibility: hidden;
+  opacity: 0;
 }
 
 .app-loader img {
@@ -244,7 +250,14 @@ button {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.brand-mark.has-image {
+  width: min(112px, 22vw);
+  padding: 3px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .view-tabs,
@@ -1862,6 +1875,88 @@ button {
   grid-column: span 1;
 }
 
+.brand-assets {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.brand-asset-card {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.brand-asset-preview {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--text), transparent 72%);
+  border-radius: 8px;
+  color: var(--muted-text);
+  background: #fbf8ff;
+}
+
+.brand-asset-card.website .brand-asset-preview {
+  height: 64px;
+  align-self: start;
+}
+
+.brand-asset-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-asset-copy {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.brand-asset-copy strong,
+.brand-asset-size {
+  display: block;
+}
+
+.brand-asset-size {
+  margin-top: 3px;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.brand-asset-copy p {
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.brand-asset-copy .form-error {
+  margin: 0;
+}
+
+.brand-asset-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.brand-asset-actions .upload-button {
+  flex: 1;
+}
+
 .theme-form.color-grid {
   grid-column: 1 / -1;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -2460,6 +2555,10 @@ button {
   }
 
   .appearance-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-assets {
     grid-template-columns: 1fr;
   }
 

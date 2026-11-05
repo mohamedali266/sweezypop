@@ -147,6 +147,8 @@ export const defaultTheme: ThemeSettings = {
   siteName: 'Sweezypop',
   logoText: 'Sweezypop',
   logoUrl: '',
+  appIconUrl: '',
+  faviconUrl: '',
   menuUrl: import.meta.env.VITE_MENU_PUBLIC_URL || 'https://sweezypop-1.vercel.app/',
   socialLinks: [
     { id: 'instagram', platform: 'instagram', label: 'Instagram', url: '', active: false },

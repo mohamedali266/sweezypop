@@ -69,6 +69,8 @@ type DbRestaurant = {
   id: string;
   name: string;
   logo_url: string | null;
+  app_icon_url?: string | null;
+  favicon_url?: string | null;
   logo_text: string | null;
   menu_url: string | null;
   primary_color: string | null;
@@ -139,6 +141,8 @@ function restaurantToTheme(restaurant: DbRestaurant, fallback: ThemeSettings, co
     siteName: restaurant.name || fallback.siteName,
     logoText: restaurant.logo_text || restaurant.name || fallback.logoText,
     logoUrl: restaurant.logo_url || '',
+    appIconUrl: restaurant.app_icon_url || fallback.appIconUrl || '',
+    faviconUrl: restaurant.favicon_url || fallback.faviconUrl || '',
     menuUrl: restaurant.menu_url || fallback.menuUrl,
     primary: restaurant.primary_color || fallback.primary,
     accent: restaurant.accent_color || fallback.accent,
@@ -177,6 +181,8 @@ function restaurantSettingsPayload(theme: ThemeSettings) {
     name: theme.siteName,
     logo_text: theme.logoText,
     logo_url: theme.logoUrl || null,
+    app_icon_url: theme.appIconUrl || null,
+    favicon_url: theme.faviconUrl || null,
     menu_url: theme.menuUrl,
     primary_color: theme.primary,
     accent_color: theme.accent,

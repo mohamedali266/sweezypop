@@ -6,6 +6,8 @@ create table if not exists restaurants (
   public_slug text unique not null,
   logo_text text,
   logo_url text,
+  app_icon_url text,
+  favicon_url text,
   menu_url text,
   primary_color text default '#ff7eb6',
   accent_color text default '#20c7b5',

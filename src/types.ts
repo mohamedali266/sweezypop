@@ -201,6 +201,8 @@ export interface ThemeSettings {
   siteName: string;
   logoText: string;
   logoUrl: string;
+  appIconUrl: string;
+  faviconUrl: string;
   menuUrl: string;
   socialLinks: SocialLink[];
   phoneCountryCode: string;
