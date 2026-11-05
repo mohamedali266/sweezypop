@@ -70,6 +70,7 @@ import {
   saveRemoteSiteSettings,
   saveRemoteUsers,
   trackRemoteOrder,
+  uploadBrandAsset,
   updateRemoteOrderStatus,
   type AdminUserPayload,
   type RemoteState,
@@ -1120,7 +1121,7 @@ function LoaderScreen({ onComplete }: { onComplete: () => void }) {
       <img
         src="/sweezypop-loader-brand.svg"
         alt="SweezyPop"
-        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 6400)}
+        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 250 : 3200)}
         onError={() => finish(600)}
       />
     </div>
@@ -1606,7 +1607,7 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
     }
     if (drag.moved) {
       event.preventDefault();
-      track.scrollLeft = drag.startScrollLeft - distance;
+      track.scrollLeft = drag.startScrollLeft - distance * 1.5;
     }
   };
 
@@ -3008,15 +3009,6 @@ function imageDimensions(source: string) {
   });
 }
 
-function fileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function BrandAssetUpload({
   locale,
   title,
@@ -3025,6 +3017,7 @@ function BrandAssetUpload({
   value,
   kind,
   onChange,
+  onUpload,
 }: {
   locale: Locale;
   title: string;
@@ -3033,21 +3026,31 @@ function BrandAssetUpload({
   value: string;
   kind: BrandAssetKind;
   onChange: (value: string) => void;
+  onUpload: (file: File) => Promise<string>;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [uploaded, setUploaded] = useState(false);
   const accept = kind === 'app' ? 'image/png' : 'image/png,image/jpeg,image/webp,image/svg+xml';
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   const selectFile = async (file: File) => {
     setError('');
+    setUploaded(false);
     setBusy(true);
+    let pendingPreview = '';
     try {
       const allowed = kind === 'app'
         ? file.type === 'image/png'
         : ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type);
       if (!allowed || file.size > 2_000_000) throw new Error(locale === 'de' ? 'Bitte ein passendes Bild bis 2 MB waehlen.' : 'Choose a supported image up to 2 MB.');
 
-      const source = await fileAsDataUrl(file);
+      const source = URL.createObjectURL(file);
+      pendingPreview = source;
       if (file.type !== 'image/svg+xml') {
         const size = await imageDimensions(source);
         if (kind === 'app' && (size.width !== size.height || size.width < 512)) {
@@ -3057,8 +3060,15 @@ function BrandAssetUpload({
           throw new Error(locale === 'de' ? 'Das Browser-Icon muss quadratisch und mindestens 64 x 64 px gross sein.' : 'The browser icon must be square and at least 64 x 64 px.');
         }
       }
-      onChange(source);
+      setPreviewUrl(source);
+      pendingPreview = '';
+      const uploadedUrl = await onUpload(file);
+      onChange(uploadedUrl);
+      setPreviewUrl('');
+      setUploaded(true);
     } catch (cause) {
+      if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+      setPreviewUrl('');
       setError(cause instanceof Error ? cause.message : t(locale, 'imageFileRequired'));
     } finally {
       setBusy(false);
@@ -3068,7 +3078,7 @@ function BrandAssetUpload({
   return (
     <article className={`brand-asset-card ${kind}`}>
       <div className="brand-asset-preview">
-        {value ? <img src={value} alt="" /> : <Image size={30} aria-hidden="true" />}
+        {previewUrl || value ? <img src={previewUrl || value} alt="" /> : <Image size={30} aria-hidden="true" />}
       </div>
       <div className="brand-asset-copy">
         <div>
@@ -3076,6 +3086,7 @@ function BrandAssetUpload({
           <span className="brand-asset-size">{dimensions}</span>
         </div>
         <p>{description}</p>
+        {uploaded && <small className="brand-asset-success">{locale === 'de' ? 'Hochgeladen. Jetzt Einstellungen speichern.' : 'Uploaded. Save the settings to apply it.'}</small>}
         {error && <small className="form-error" role="alert">{error}</small>}
         <div className="brand-asset-actions">
           <label className="small-action neutral upload-button">
@@ -3093,7 +3104,7 @@ function BrandAssetUpload({
             />
           </label>
           {value && (
-            <button type="button" className="icon-button subtle" title={locale === 'de' ? 'Entfernen' : 'Remove'} onClick={() => onChange('')}>
+            <button type="button" className="icon-button subtle" title={locale === 'de' ? 'Entfernen' : 'Remove'} onClick={() => { setPreviewUrl(''); setUploaded(false); onChange(''); }}>
               <Trash2 size={16} />
             </button>
           )}
@@ -3236,6 +3247,7 @@ function AppearanceSettings({
                 value={draftTheme.logoUrl}
                 kind="website"
                 onChange={(value) => updateBrandAsset('logoUrl', value)}
+                onUpload={(file) => uploadBrandAsset('website', file)}
               />
               <BrandAssetUpload
                 locale={locale}
@@ -3245,6 +3257,7 @@ function AppearanceSettings({
                 value={draftTheme.appIconUrl}
                 kind="app"
                 onChange={(value) => updateBrandAsset('appIconUrl', value)}
+                onUpload={(file) => uploadBrandAsset('app', file)}
               />
               <BrandAssetUpload
                 locale={locale}
@@ -3254,6 +3267,7 @@ function AppearanceSettings({
                 value={draftTheme.faviconUrl}
                 kind="favicon"
                 onChange={(value) => updateBrandAsset('faviconUrl', value)}
+                onUpload={(file) => uploadBrandAsset('favicon', file)}
               />
             </div>
           </>

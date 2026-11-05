@@ -914,7 +914,7 @@ button {
   animation: rise-in 460ms cubic-bezier(0.2, 0.78, 0.22, 1) both;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
   scroll-snap-align: start;
-  scroll-snap-stop: always;
+  scroll-snap-stop: normal;
 }
 
 .offer-card:hover {
@@ -1944,6 +1944,12 @@ button {
 
 .brand-asset-copy .form-error {
   margin: 0;
+}
+
+.brand-asset-success {
+  color: #087a66;
+  font-weight: 850;
+  line-height: 1.35;
 }
 
 .brand-asset-actions {

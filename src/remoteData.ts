@@ -224,6 +224,22 @@ export async function saveRemoteSiteSettings(theme: ThemeSettings, layout: MenuL
   await saveOptionalRestaurantSettings(restaurantId, theme, layout);
 }
 
+export async function uploadBrandAsset(kind: 'website' | 'app' | 'favicon', file: File) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const restaurant = await getRestaurant();
+  const objectPath = `${restaurant.id}/${kind}`;
+  const { error } = await supabase.storage.from('brand-assets').upload(objectPath, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: true,
+  });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('brand-assets').getPublicUrl(objectPath);
+  if (!data.publicUrl) throw new Error('The uploaded image URL could not be created.');
+  return `${data.publicUrl}?v=${Date.now()}`;
+}
+
 export async function loadPublicReviews(limit = 16): Promise<CustomerReview[]> {
   if (!isSupabaseConfigured || !supabase) return [];
   const { data, error } = await supabase.rpc('get_public_reviews', { p_slug: restaurantSlug, p_limit: limit });
