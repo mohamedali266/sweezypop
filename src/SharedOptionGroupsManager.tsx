@@ -18,7 +18,9 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   const [error,setError] = useState('');
   const visibleItems = useMemo(() => items.filter(item => `${item.name.en} ${item.name.de}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
   const editorOpen = Boolean(editing);
-  const portalTarget = typeof document === 'undefined' ? null : document.body;
+  const portalTarget = typeof document === 'undefined'
+    ? null
+    : document.querySelector<HTMLElement>('.app') ?? document.body;
   useEffect(() => {
     if (!editorOpen) return;
     const previousOverflow = document.body.style.overflow;

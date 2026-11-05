@@ -898,6 +898,7 @@ function AppContent() {
           '--surface': theme.surface,
           '--text': theme.text,
           '--muted': theme.mutedText,
+          '--muted-text': theme.mutedText,
           '--button-text': theme.buttonText,
           '--card': theme.card,
           '--border': theme.border,
@@ -2200,7 +2201,9 @@ function ItemsManager({
   importItemsFromExcel: (file: File) => Promise<void>;
 }) {
   const [formOpen, setFormOpen] = useState(false);
-  const portalTarget = typeof document === 'undefined' ? null : document.body;
+  const portalTarget = typeof document === 'undefined'
+    ? null
+    : document.querySelector<HTMLElement>('.app') ?? document.body;
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [preparationItem, setPreparationItem] = useState<MenuItem | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);

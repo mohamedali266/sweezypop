@@ -1680,7 +1680,7 @@ button {
 .category-translation-row input{min-width:0}
 .category-translation-row button{height:44px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:#b4233d}
 
-.item-editor-drawer.item-form-card{position:relative;inset:auto;transform:none;max-height:none;margin:0;padding:0;width:min(820px,100%);overflow:auto}
+.item-editor-drawer.item-form-card{position:relative;inset:auto;transform:none;max-height:none;margin:0;padding:0;width:min(820px,100%);overflow-y:auto;overflow-x:hidden;background:#fff;background:var(--surface,#fff);color:var(--text,#211b33)}
 .item-editor-drawer>.section-head{position:sticky;top:0;z-index:3;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);padding:22px 26px;border-bottom:1px solid var(--border)}
 .item-editor-drawer>.form-grid,.item-editor-drawer>.item-form-split,.item-editor-drawer>.size-editor,.item-editor-drawer>.form-error{margin-left:26px;margin-right:26px}
 .item-editor-drawer>.form-grid{margin-top:22px}
