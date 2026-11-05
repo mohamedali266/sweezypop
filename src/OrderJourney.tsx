@@ -12,6 +12,7 @@ interface OrderJourneyProps {
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   notificationsEnabled: boolean;
+  notificationPromptDismissed?: boolean;
   onEnableNotifications: () => void | Promise<void>;
   notificationPromptBusy?: boolean;
   statusNotice?: string;
@@ -73,7 +74,7 @@ function formatMoney(value: number, locale: Locale) {
 
 export function OrderJourney({
   locale, order, connection, expanded, onExpandedChange, notificationsEnabled, onEnableNotifications,
-  notificationPromptBusy = false, statusNotice, onConfirmReceived, onDismiss,
+  notificationPromptDismissed = false, notificationPromptBusy = false, statusNotice, onConfirmReceived, onDismiss,
 }: OrderJourneyProps) {
   const text = copy[locale];
   const cancelled = order.status === 'cancelled';
@@ -346,7 +347,7 @@ export function OrderJourney({
               </details>
             )}
 
-            {!notificationsEnabled && !cancelled && !done && currentStage < 2 && (
+            {!notificationsEnabled && !notificationPromptDismissed && !cancelled && !done && currentStage < 2 && (
               <section className="order-journey__notifications">
                 <Bell aria-hidden="true" /><div><strong>{text.notificationsTitle}</strong><p>{text.notificationsBody}</p></div>
                 {notificationFeedback === 'failed' && <p className="order-journey__notification-error" role="alert">{text.notificationUnavailable}</p>}

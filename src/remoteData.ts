@@ -1,4 +1,4 @@
-import type { AppUser, CartLine, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, SharedOptionGroup, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
+import type { AppUser, CartLine, CashierShift, CashierSummary, CashTransfer, Category, CustomerReview, Locale, ManagedReview, MenuItem, MenuLayout, OpeningHour, Order, ProductSize, SharedOptionGroup, SocialLink, StaffBoardOrder, StaffDirectoryEntry, StaffGuide, StaffGuideInput, StaffShift, ThemeSettings } from './types';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface RemoteState {
@@ -13,6 +13,19 @@ export interface RemoteState {
 }
 
 const restaurantSlug = import.meta.env.VITE_RESTAURANT_SLUG || 'sweezypop';
+
+export function normalizeProductSizes(value: unknown): ProductSize[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry, index) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const size = entry as { id?: unknown; name?: { en?: unknown; de?: unknown }; price?: unknown; available?: unknown };
+    const en = typeof size.name?.en === 'string' ? size.name.en : '';
+    const de = typeof size.name?.de === 'string' ? size.name.de : en;
+    const price = Number(size.price);
+    if (!en.trim() || !Number.isFinite(price) || price <= 0) return [];
+    return [{ id:typeof size.id === 'string' && size.id ? size.id : `size-${index + 1}`, name:{ en,de:de || en }, price, available:size.available !== false }];
+  });
+}
 
 type DbPreparation = { station?: string; estimated_minutes?: number; ingredients_en?: string[]; ingredients_de?: string[]; tools_en?: string[]; tools_de?: string[]; steps_en?: string[]; steps_de?: string[]; warning_en?: string; warning_de?: string };
 type DbOrderLine = { menu_item_id?: string | null; id?: string | null; quantity: number; unit_price?: number; price?: number; name_en?: string; name_de?: string; preparation?: DbPreparation | null };
@@ -291,6 +304,7 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
   const optionGroups: SharedOptionGroup[]=(optionGroupsResult.data||[]).map(group=>({id:group.id,name:{en:group.name_en,de:group.name_de},mode:group.mode,required:Boolean(group.required),min:Number(group.min_select||0),max:Number(group.max_select||1),options:Array.isArray(group.options)?group.options:[],linkedCategoryIds:group.linked_category_ids||[],linkedItemIds:group.linked_item_ids||[],active:Boolean(group.active),sortOrder:Number(group.sort_order||0)}));
   const items: MenuItem[] = (itemsResult.data || []).map((item) => {
     const offerDescription = readOfferDescription(item.description_de);
+    const sizes = normalizeProductSizes(item.sizes);
     return {
       id: item.id,
       categoryId: item.category_id,
@@ -303,9 +317,9 @@ export async function loadRemoteState(fallback: RemoteState): Promise<RemoteStat
       available: Boolean(item.available),
       sortOrder: item.sort_order || 0,
       includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
-      sizes:Array.isArray(item.sizes)?item.sizes:[], optionGroupIds:item.option_group_ids||[],
+      sizes, optionGroupIds:item.option_group_ids||[],
       optionGroups:[
-        ...(Array.isArray(item.sizes)&&item.sizes.length?[{id:'__size__',name:{en:'Size',de:'Größe'},mode:'single' as const,required:true,min:1,max:1,options:item.sizes.map((size:{id:string;name:{en:string;de:string};price:number;available:boolean})=>({id:size.id,name:size.name,priceDelta:Math.max(0,Number(size.price)-Number(item.price||0)),available:Boolean(size.available)}))}]:[]),
+        ...(sizes.length?[{id:'__size__',name:{en:'Size',de:'Größe'},mode:'single' as const,required:true,min:1,max:1,options:sizes.map(size=>({id:size.id,name:size.name,priceDelta:Math.max(0,size.price-Number(item.price||0)),available:size.available}))}]:[]),
         ...optionGroups.filter(group=>group.active&&(group.linkedCategoryIds.includes(item.category_id)||group.linkedItemIds.includes(item.id))),
       ],
       preparation: {

@@ -1,5 +1,6 @@
 import { Check, ChevronRight, Minus, Plus, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Locale, MenuItem, ProductOptionGroup, ProductSelection } from './types';
 import { activeOptionGroups, configuredPrice, validateSelections } from './optionLogic';
 import './product-options.css';
@@ -9,30 +10,38 @@ const uid = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
 export function ProductOptionsDialog({ item, locale, onClose, onConfirm }: { item: MenuItem; locale: Locale; onClose: () => void; onConfirm: (selections: ProductSelection[]) => void }) {
   const groups = useMemo(() => activeOptionGroups(item), [item]);
+  const portalTarget = typeof document === 'undefined' ? null : document.body;
   const [selections,setSelections] = useState<ProductSelection[]>(() => groups.flatMap(group => {
     const available = group.options.filter(option => option.available);
     return group.required && available.length === 1 ? [{ groupId:group.id, optionIds:[available[0].id] }] : [];
   }));
   const result = validateSelections(item,selections);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
   const choose = (group: ProductOptionGroup, optionId: string) => setSelections(current => {
     const selected = current.find(value => value.groupId === group.id)?.optionIds || [];
     const optionIds = group.mode === 'single' ? [optionId] : selected.includes(optionId) ? selected.filter(id => id !== optionId) : selected.length < group.max ? [...selected,optionId] : selected;
     return [...current.filter(value => value.groupId !== group.id), ...(optionIds.length ? [{ groupId:group.id,optionIds }] : [])];
   });
-  return <div className="product-options-overlay" role="presentation" onClick={onClose}>
+  if (!portalTarget) return null;
+  return createPortal(<div className="product-options-overlay" role="presentation" onClick={onClose}>
     <section className="product-options-dialog" role="dialog" aria-modal="true" aria-label={item.name[locale]} onClick={event => event.stopPropagation()}>
       <header><div><span>{locale === 'de' ? 'Artikel anpassen' : 'Customize item'}</span><h2>{item.name[locale]}</h2><p>{locale === 'de' ? 'Wähle die gewünschten Optionen.' : 'Choose exactly how you want it.'}</p></div><button type="button" onClick={onClose} aria-label={locale === 'de' ? 'Schließen' : 'Close'}><X /></button></header>
       <div className="product-options-groups">{groups.map((group,index) => {
         const picked = selections.find(value => value.groupId === group.id)?.optionIds || [];
         const minimum = group.required ? Math.max(1,group.min) : group.min;
-        return <fieldset key={group.id}><legend><span>{index+1}</span><div><strong>{group.name[locale]}</strong><small>{group.mode === 'single' ? (locale === 'de' ? 'Eine Option wählen' : 'Choose one') : `${locale === 'de' ? 'Bis zu' : 'Up to'} ${group.max}`}</small></div>{minimum > 0 && <b>{locale === 'de' ? 'Pflicht' : 'Required'}</b>}</legend><div className="product-option-list">{group.options.filter(option => option.available).map(option => {
+        const visibleOptions = group.id === '__size__' ? group.options : group.options.filter(option => option.available);
+        return <fieldset key={group.id}><legend><span>{index+1}</span><div><strong>{group.name[locale]}</strong><small>{group.mode === 'single' ? (locale === 'de' ? 'Eine Option wählen' : 'Choose one') : `${locale === 'de' ? 'Bis zu' : 'Up to'} ${group.max}`}</small></div>{minimum > 0 && <b>{locale === 'de' ? 'Pflicht' : 'Required'}</b>}</legend><div className="product-option-list">{visibleOptions.map(option => {
           const active = picked.includes(option.id);
-          return <button type="button" className={active ? 'active' : ''} aria-pressed={active} key={option.id} onClick={() => choose(group,option.id)}><span>{active ? <Check /> : <ChevronRight />}</span><strong>{option.name[locale]}</strong><em>{option.priceDelta ? `+ ${money(option.priceDelta,locale)}` : (locale === 'de' ? 'inklusive' : 'included')}</em></button>;
+          return <button type="button" disabled={!option.available} className={active ? 'active' : ''} aria-pressed={active} key={option.id} onClick={() => choose(group,option.id)}><span>{active ? <Check /> : <ChevronRight />}</span><strong>{option.name[locale] || option.name.en}</strong><em>{!option.available ? (locale === 'de' ? 'Nicht verfügbar' : 'Unavailable') : option.priceDelta ? `+ ${money(option.priceDelta,locale)}` : (locale === 'de' ? 'inklusive' : 'included')}</em></button>;
         })}</div></fieldset>;
       })}</div>
       <footer><div><span>{locale === 'de' ? 'Artikelpreis' : 'Item total'}</span><strong>{money(configuredPrice(item,selections),locale)}</strong></div><button type="button" disabled={!result.valid} onClick={() => onConfirm(result.selections)}><Plus />{locale === 'de' ? 'Zur Bestellung' : 'Add to order'}</button></footer>
     </section>
-  </div>;
+  </div>, portalTarget);
 }
 
 export function OptionGroupsEditor({ locale, groups, onChange }: { locale: Locale; groups: ProductOptionGroup[]; onChange: (groups: ProductOptionGroup[]) => void }) {

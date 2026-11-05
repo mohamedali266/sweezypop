@@ -1,5 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { PointOfSale, OrderReceipt } from './PointOfSale';
@@ -303,6 +304,10 @@ function AppContent() {
   const [trackingConnection, setTrackingConnection] = useState<'live' | 'checking' | 'offline'>('checking');
   const [orderStatusNotice, setOrderStatusNotice] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => 'Notification' in window && Notification.permission === 'granted');
+  const [notificationPromptDismissed, setNotificationPromptDismissed] = useState(() => {
+    if (!('Notification' in window) || Notification.permission !== 'default') return true;
+    try { return sessionStorage.getItem('sweezypop.notificationPromptHandled') === '1'; } catch { return false; }
+  });
   const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
   const [remoteReady, setRemoteReady] = useState(!isSupabaseConfigured);
   const [pullDistance, setPullDistance] = useState(0);
@@ -365,6 +370,8 @@ function AppContent() {
 
   const enableOrderNotifications = async () => {
     if (notificationPromptBusy) return;
+    setNotificationPromptDismissed(true);
+    try { sessionStorage.setItem('sweezypop.notificationPromptHandled', '1'); } catch { /* Session storage can be unavailable in private browsing. */ }
     setNotificationPromptBusy(true);
     try {
       let audioReady = false;
@@ -390,6 +397,8 @@ function AppContent() {
       }
       setNotificationsEnabled(pushReady);
       if (audioReady) playOrderTone(false);
+    } catch {
+      setNotificationsEnabled(false);
     } finally {
       setNotificationPromptBusy(false);
     }
@@ -957,6 +966,7 @@ function AppContent() {
           orderJourneyExpanded={orderJourneyExpanded}
           setOrderJourneyExpanded={setOrderJourneyExpanded}
           notificationsEnabled={notificationsEnabled}
+          notificationPromptDismissed={notificationPromptDismissed}
           enableOrderNotifications={() => void enableOrderNotifications()}
           notificationPromptBusy={notificationPromptBusy}
           orderStatusNotice={orderStatusNotice}
@@ -1288,6 +1298,7 @@ function MenuPage(props: {
   orderJourneyExpanded: boolean;
   setOrderJourneyExpanded: (expanded: boolean) => void;
   notificationsEnabled: boolean;
+  notificationPromptDismissed: boolean;
   enableOrderNotifications: () => void;
   notificationPromptBusy: boolean;
   orderStatusNotice: string;
@@ -1327,7 +1338,7 @@ function MenuPage(props: {
 
       <ContactStrip locale={props.locale} theme={props.theme} />
 
-      {!props.notificationsEnabled && !props.trackedOrder && (
+      {!props.notificationsEnabled && !props.notificationPromptDismissed && !props.trackedOrder && (
         <section className="menu-notification-prompt" role="status">
           <div><strong>{props.locale === 'de' ? 'Bestellstatus nicht verpassen' : 'Never miss an order update'}</strong><span>{props.locale === 'de' ? 'Aktiviere Benachrichtigungen für Statusänderungen, auch wenn die App im Hintergrund ist.' : 'Enable notifications for status changes, including while the app is in the background.'}</span></div>
           <button type="button" disabled={props.notificationPromptBusy} onClick={props.enableOrderNotifications}>{props.notificationPromptBusy ? (props.locale === 'de' ? 'Wird aktiviert …' : 'Enabling …') : (props.locale === 'de' ? 'Aktivieren' : 'Enable')}</button>
@@ -1381,6 +1392,7 @@ function MenuPage(props: {
           expanded={props.orderJourneyExpanded}
           onExpandedChange={props.setOrderJourneyExpanded}
           notificationsEnabled={props.notificationsEnabled}
+          notificationPromptDismissed={props.notificationPromptDismissed}
           onEnableNotifications={props.enableOrderNotifications}
           notificationPromptBusy={props.notificationPromptBusy}
           statusNotice={props.orderStatusNotice}
@@ -2188,6 +2200,7 @@ function ItemsManager({
   importItemsFromExcel: (file: File) => Promise<void>;
 }) {
   const [formOpen, setFormOpen] = useState(false);
+  const portalTarget = typeof document === 'undefined' ? null : document.body;
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [preparationItem, setPreparationItem] = useState<MenuItem | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -2207,6 +2220,13 @@ function ItemsManager({
   });
   const [formError, setFormError] = useState('');
 
+  useEffect(() => {
+    if (!formOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [formOpen]);
+
   const emptyItemForm = () => ({
     nameEn: '', nameDe: '', descriptionEn: '', descriptionDe: '', categoryId: categories[0]?.id || '',
     imageUrl: '', price: '', badgeEn: '', badgeDe: '', available: true, hasSizes: false, sizes: [] as ProductSize[],
@@ -2225,7 +2245,7 @@ function ItemsManager({
       nameEn:item.name.en, nameDe:item.name.de, descriptionEn:item.description.en, descriptionDe:item.description.de,
       categoryId:item.categoryId, imageUrl:item.imageUrl || '', price:String(item.price), badgeEn:item.badge?.en || '',
       badgeDe:item.badge?.de || '', available:item.available,
-      hasSizes:Boolean(item.sizes?.length), sizes:item.sizes || [],
+      hasSizes:Boolean(item.sizes?.length), sizes:(item.sizes || []).map(size => ({ ...size, name:{ ...size.name }, available:size.available !== false })),
     });
     setFormError('');
     setFormOpen(true);
@@ -2395,7 +2415,7 @@ function ItemsManager({
         ))}
       </div>
 
-      {formOpen && (
+      {formOpen && portalTarget && createPortal(
         <div className="item-editor-overlay" role="presentation" onClick={() => setFormOpen(false)}>
           <form className="item-form-card item-editor-drawer" role="dialog" aria-modal="true" aria-label={editingItemId ? (locale === 'de' ? 'Artikel bearbeiten' : 'Edit item') : t(locale, 'addItem')} onClick={(event) => event.stopPropagation()} onSubmit={submitItem}>
             <div className="section-head">
@@ -2516,7 +2536,8 @@ function ItemsManager({
               </button>
             </div>
           </form>
-        </div>
+        </div>,
+        portalTarget,
       )}
       {preparationItem && (
         <PreparationEditor

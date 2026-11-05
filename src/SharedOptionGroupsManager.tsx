@@ -1,5 +1,6 @@
 import { Check, Edit3, Link2, Minus, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Category, Locale, MenuItem, SharedOptionGroup } from './types';
 import './shared-option-groups.css';
 
@@ -17,6 +18,7 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   const [error,setError] = useState('');
   const visibleItems = useMemo(() => items.filter(item => `${item.name.en} ${item.name.de}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
   const editorOpen = Boolean(editing);
+  const portalTarget = typeof document === 'undefined' ? null : document.body;
   useEffect(() => {
     if (!editorOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -54,7 +56,7 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
       <footer><button type="button" onClick={() => { setEditing(structuredClone(group)); setError(''); }}><Edit3/>{text.edit}</button><button type="button" className="danger" onClick={() => onChange(groups.filter(current => current.id !== group.id))}><Trash2/>{text.delete}</button></footer>
     </article>)}</div>}
 
-    {editing && <div className="group-editor-overlay" onClick={() => setEditing(null)}><aside className="group-editor-drawer" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+    {editing && portalTarget && createPortal(<div className="group-editor-overlay" onClick={() => setEditing(null)}><aside className="group-editor-drawer" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
       <header><div><span>{locale === 'de' ? 'OPTIONEN-BIBLIOTHEK' : 'OPTIONS LIBRARY'}</span><h2>{editing.name[locale] || text.create}</h2><p>{editing.options.length} {locale === 'de' ? 'Optionen' : 'options'} · {editing.linkedCategoryIds.length + editing.linkedItemIds.length} {locale === 'de' ? 'Verknüpfungen' : 'connections'}</p></div><button type="button" onClick={() => setEditing(null)} aria-label="Close"><X/></button></header>
       <div className="group-editor-body">
         <section><h3>{text.name}</h3><div className="group-form-grid"><label>English<input value={editing.name.en} onChange={event => patch({ name:{ ...editing.name,en:event.target.value } })}/></label><label>Deutsch<input value={editing.name.de} onChange={event => patch({ name:{ ...editing.name,de:event.target.value } })}/></label></div></section>
@@ -83,6 +85,6 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
         {error && <p className="form-error">{error}</p>}
       </div>
       <footer><button type="button" className="small-action neutral" onClick={() => setEditing(null)}>{locale === 'de' ? 'Abbrechen' : 'Cancel'}</button><button type="button" className="small-action" onClick={save}><Save/>{text.save}</button></footer>
-    </aside></div>}
+    </aside></div>, portalTarget)}
   </section>;
 }
