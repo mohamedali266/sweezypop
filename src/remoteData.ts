@@ -329,9 +329,10 @@ type PublicMenuBootstrap = {
 
 const publicSupabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 function publicMenuImageUrl(value: string) {
-  const marker = value.match(/^legacy-image:([A-Za-z0-9_-]{1,100}):([a-f0-9]{32})$/);
-  if (!marker || !publicSupabaseUrl) return value;
-  const query = new URLSearchParams({ slug: restaurantSlug, item: marker[1], v: marker[2] });
+  if (!value.startsWith('legacy-image:') || !publicSupabaseUrl) return value;
+  const [, itemId, version, ...extra] = value.split(':');
+  if (extra.length || !/^[A-Za-z0-9_-]{1,100}$/.test(itemId || '') || !/^[a-f0-9]{32}$/.test(version || '')) return '';
+  const query = new URLSearchParams({ slug: restaurantSlug, item: itemId, v: version });
   return `${publicSupabaseUrl}/functions/v1/menu-image?${query.toString()}`;
 }
 
