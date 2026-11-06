@@ -14,9 +14,9 @@
 <mask id="mp2" maskUnits="userSpaceOnUse" x="0" y="0" width="900" height="1100"><path class="w w_p2" d="M470 619H579" stroke-width="166" pathLength="1"/></mask>
 <linearGradient id="gB2" gradientUnits="userSpaceOnUse" x1="0" y1="355" x2="0" y2="421"><stop offset="0" stop-color="#FF9ACB"/><stop offset="1" stop-color="#F2559D"/></linearGradient>
 <style>.w{fill:none;stroke:#fff;}
-.g{transform-box:fill-box;transform-origin:50% 100%;animation-duration:3.2s;animation-iteration-count:infinite;animation-timing-function:linear;}
-.w{animation-duration:3.2s;animation-iteration-count:infinite;animation-timing-function:linear;}
-#all{animation:fade 3.2s infinite linear;}
+.g{transform-box:fill-box;transform-origin:50% 100%;animation-duration:1.5s;animation-iteration-count:infinite;animation-timing-function:linear;}
+.w{animation-duration:1.5s;animation-iteration-count:infinite;animation-timing-function:linear;}
+#all{animation:fade 1.5s infinite linear;}
 @keyframes fade{0%{opacity:1}85.156%{opacity:1}92.969%{opacity:0}100%{opacity:0}}
 .w_S{animation-name:kw_S;}
 @keyframes kw_S{0%{stroke-dasharray:1;stroke-dashoffset:1}3.906%{stroke-dasharray:1;stroke-dashoffset:1}11.719%{stroke-dasharray:1;stroke-dashoffset:0}100%{stroke-dasharray:1;stroke-dashoffset:0}}
@@ -54,9 +54,9 @@
 @keyframes kw_p2{0%{stroke-dasharray:1;stroke-dashoffset:1}27.656%{stroke-dasharray:1;stroke-dashoffset:1}35.469%{stroke-dasharray:1;stroke-dashoffset:0}100%{stroke-dasharray:1;stroke-dashoffset:0}}
 .g_p2{animation-name:kg_p2;}
 @keyframes kg_p2{0%{transform:translateY(16px) scale(.94)}27.656%{transform:translateY(16px) scale(.94)}33.594%{transform:translateY(-3px) scale(1.03)}37.344%{transform:none}100%{transform:none}}
-.gb{transform-box:fill-box;transform-origin:50% 100%;animation:kb 3.2s infinite linear;}
+.gb{transform-box:fill-box;transform-origin:50% 100%;animation:kb 1.5s infinite linear;}
 @keyframes kb{0%{transform:scale(0)}35.156%{transform:scale(0)}38.281%{transform:scale(1.22,.86)}41.094%{transform:scale(.92,1.1)}43.750%{transform:scale(1.05,.97)}46.406%{transform:none}56.250%{transform:translateY(-4px)}65.625%{transform:none}75.000%{transform:translateY(-4px)}84.375%{transform:none}100%{transform:none}}
-.gl{transform-box:fill-box;transform-origin:45% 95%;animation:kl 3.2s infinite linear;}
+.gl{transform-box:fill-box;transform-origin:45% 95%;animation:kl 1.5s infinite linear;}
 @keyframes kl{0%{transform:scale(0)}42.188%{transform:scale(0)}45.625%{transform:scale(1.15) rotate(-6deg)}48.438%{transform:scale(1) rotate(0)}55.469%{transform:rotate(9deg)}60.156%{transform:rotate(-7deg)}64.844%{transform:rotate(5deg)}69.531%{transform:rotate(0)}100%{transform:rotate(0)}}
 .gbl{animation-name:kbl;}
 @keyframes kbl{0%{transform:scale(0)}42.186%{transform:scale(0)}42.188%{transform:none}56.250%{transform:translateY(-4px)}65.625%{transform:none}75.000%{transform:translateY(-4px)}84.375%{transform:none}100%{transform:none}}

@@ -948,7 +948,12 @@ function AppContent() {
         } as CSSProperties
       }
     >
-      {showLoader && <LoaderScreen onComplete={() => setShowLoader(false)} />}
+      {showLoader && (
+        <LoaderScreen
+          ready={remoteReady && items.length > 0 && categories.length > 0}
+          onComplete={() => setShowLoader(false)}
+        />
+      )}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
       {showInstallBanner && !isStandalone && (authRole || view === 'menu') && (
         <InstallAppBanner
@@ -1094,10 +1099,12 @@ function App() {
   );
 }
 
-function LoaderScreen({ onComplete }: { onComplete: () => void }) {
+function LoaderScreen({ ready, onComplete }: { ready: boolean; onComplete: () => void }) {
   const [leaving, setLeaving] = useState(false);
+  const [logoLoaded, setLogoLoaded] = useState(false);
   const completed = useRef(false);
   const timers = useRef<number[]>([]);
+  const logoLoadedAt = useRef<number | null>(null);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
@@ -1114,18 +1121,30 @@ function LoaderScreen({ onComplete }: { onComplete: () => void }) {
   }, []);
 
   useEffect(() => {
+    if (!ready || !logoLoaded || logoLoadedAt.current === null) return;
+    const remainingCycle = Math.max(0, 1_500 - (performance.now() - logoLoadedAt.current));
+    const timer = window.setTimeout(() => finish(0), remainingCycle);
+    return () => window.clearTimeout(timer);
+  }, [finish, logoLoaded, ready]);
+
+  useEffect(() => {
     const activeTimers = timers.current;
-    activeTimers.push(window.setTimeout(() => finish(0), 15_000));
     return () => activeTimers.forEach(window.clearTimeout);
-  }, [finish]);
+  }, []);
 
   return (
     <div className={`app-loader${leaving ? ' is-leaving' : ''}`} role="status" aria-label="Loading Sweezypop">
       <img
         src="/sweezypop-loader-brand.svg"
         alt="SweezyPop"
-        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 180 : 900)}
-        onError={() => finish(600)}
+        onLoad={() => {
+          logoLoadedAt.current = performance.now();
+          setLogoLoaded(true);
+        }}
+        onError={() => {
+          logoLoadedAt.current = performance.now() - 1_500;
+          setLogoLoaded(true);
+        }}
       />
     </div>
   );

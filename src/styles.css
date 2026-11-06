@@ -909,6 +909,7 @@ button {
   grid-template-columns: minmax(150px, 0.52fr) minmax(0, 1fr);
   overflow: hidden;
   min-height: 190px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
   border-radius: 20px;
   color: var(--text);
