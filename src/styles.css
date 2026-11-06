@@ -47,7 +47,9 @@ button {
   z-index: 999;
   display: grid;
   place-items: center;
-  background: white;
+  background:
+    linear-gradient(90deg, rgba(33, 27, 51, 0.72), rgba(33, 27, 51, 0.08)),
+    linear-gradient(135deg, var(--primary), var(--lavender));
   opacity: 1;
   transition: opacity 360ms ease, visibility 360ms ease;
 }
@@ -60,6 +62,7 @@ button {
 .app-loader img {
   width: min(72vw, 420px);
   height: auto;
+  filter: brightness(0) invert(1);
 }
 
 .app-fallback {
@@ -885,7 +888,8 @@ button {
   scrollbar-width: none;
   -ms-overflow-style: none;
   overscroll-behavior-inline: contain;
-  touch-action: pan-y pinch-zoom;
+  touch-action: pan-x pan-y pinch-zoom;
+  -webkit-overflow-scrolling: touch;
   user-select: none;
 }
 
@@ -915,6 +919,7 @@ button {
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
   scroll-snap-align: start;
   scroll-snap-stop: normal;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .offer-card:hover {
@@ -923,7 +928,17 @@ button {
   box-shadow: 0 24px 58px rgba(87, 66, 111, 0.15);
 }
 
+@media (hover: none) {
+  .offer-card:hover {
+    transform: none;
+    border-color: color-mix(in srgb, var(--border), transparent 18%);
+    box-shadow: 0 16px 38px rgba(87, 66, 111, 0.1);
+  }
+}
+
 .offer-card-media {
+  align-self: stretch;
+  height: 100%;
   min-height: 100%;
 }
 
@@ -952,7 +967,8 @@ button {
 }
 
 .offer-card-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -967,6 +983,12 @@ button {
   color: var(--accent);
   font-size: .78rem;
   font-weight: 850;
+  white-space: nowrap;
+}
+
+.offer-card-meta strong {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .menu-card-body {

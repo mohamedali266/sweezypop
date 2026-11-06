@@ -292,81 +292,80 @@ export async function saveFooterContent(copyright: ThemeSettings['footerCopyrigh
   if (error) throw error;
 }
 
-export async function loadRemoteState(fallback: RemoteState): Promise<RemoteState | null> {
+type PublicMenuBootstrap = {
+  restaurant: DbRestaurant;
+  categories?: Array<Record<string, unknown>>;
+  items?: Array<Record<string, unknown>>;
+  option_groups?: Array<Record<string, unknown>>;
+  hours?: Array<Record<string, unknown>>;
+  content?: DbContentSettings | null;
+};
+
+export async function loadRemoteState(fallback: RemoteState, includePrivate = true): Promise<RemoteState | null> {
   if (!isSupabaseConfigured || !supabase) return null;
+  const { data, error } = await supabase.rpc('get_public_menu_bootstrap', { p_slug: restaurantSlug });
+  if (error) throw error;
+  const bootstrap = data as PublicMenuBootstrap | null;
+  if (!bootstrap?.restaurant?.id) throw new Error('Menu data is unavailable.');
 
-  const restaurant = await getRestaurant();
+  const restaurant = bootstrap.restaurant;
   const restaurantId = restaurant.id;
+  const categoryRows = bootstrap.categories || [];
+  const itemRows = bootstrap.items || [];
+  const optionGroupRows = bootstrap.option_groups || [];
+  const hourRows = bootstrap.hours || [];
 
-  const [categoriesResult, itemsResult, optionGroupsResult, hoursResult, contentResult] = await Promise.all([
-    supabase.from('categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-    supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-    supabase.from('product_option_groups').select('*').eq('restaurant_id',restaurantId).order('sort_order'),
-    supabase.from('opening_hours').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-    supabase.from('restaurant_content_settings').select('reviews_visible,footer_copyright_en,footer_copyright_de').eq('restaurant_id', restaurantId).maybeSingle(),
-  ]);
-
-  if (categoriesResult.error) throw categoriesResult.error;
-  if (itemsResult.error) throw itemsResult.error;
-  if (optionGroupsResult.error) throw optionGroupsResult.error;
-  if (hoursResult.error) throw hoursResult.error;
-  if (contentResult.error) throw contentResult.error;
-
-  const categories: Category[] = (categoriesResult.data || []).map((category) => ({
+  const categories: Category[] = categoryRows.map((category) => ({
     id: category.id,
     name: { en: category.name_en, de: category.name_de },
     sortOrder: category.sort_order || 0,
-  }));
+  })) as Category[];
 
-  const optionGroups: SharedOptionGroup[]=(optionGroupsResult.data||[]).map(group=>({id:group.id,name:{en:group.name_en,de:group.name_de},mode:group.mode,required:Boolean(group.required),min:Number(group.min_select||0),max:Number(group.max_select||1),options:Array.isArray(group.options)?group.options:[],linkedCategoryIds:group.linked_category_ids||[],linkedItemIds:group.linked_item_ids||[],active:Boolean(group.active),sortOrder:Number(group.sort_order||0)}));
-  const items: MenuItem[] = (itemsResult.data || []).map((item) => {
-    const offerDescription = readOfferDescription(item.description_de);
+  const optionGroups: SharedOptionGroup[]=optionGroupRows.map(group=>({id:String(group.id),name:{en:String(group.name_en||''),de:String(group.name_de||group.name_en||'')},mode:group.mode as SharedOptionGroup['mode'],required:Boolean(group.required),min:Number(group.min_select||0),max:Number(group.max_select||1),options:Array.isArray(group.options)?group.options as SharedOptionGroup['options']:[],linkedCategoryIds:Array.isArray(group.linked_category_ids)?group.linked_category_ids as string[]:[],linkedItemIds:Array.isArray(group.linked_item_ids)?group.linked_item_ids as string[]:[],active:Boolean(group.active),sortOrder:Number(group.sort_order||0)}));
+  const items: MenuItem[] = itemRows.map((row) => {
+    const item = row as Record<string, unknown>;
+    const offerDescription = readOfferDescription(String(item.description_de || ''));
     const sizes = normalizeProductSizes(item.sizes);
+    const categoryId = String(item.category_id || '');
+    const itemId = String(item.id || '');
+    const itemPrice = Number(item.price || 0);
     return {
-      id: item.id,
-      categoryId: item.category_id,
-      name: { en: item.name_en, de: item.name_de },
-      description: { en: item.description_en || '', de: offerDescription.descriptionDe },
-      price: Number(item.price || 0),
-      badge: item.badge_en || item.badge_de ? { en: item.badge_en || '', de: item.badge_de || item.badge_en || '' } : undefined,
-      imageStyle: item.image_style || 'pink',
-      imageUrl: item.image_url || '',
+      id: itemId,
+      categoryId,
+      name: { en: String(item.name_en || ''), de: String(item.name_de || item.name_en || '') },
+      description: { en: String(item.description_en || ''), de: offerDescription.descriptionDe },
+      price: itemPrice,
+      badge: item.badge_en || item.badge_de ? { en: String(item.badge_en || ''), de: String(item.badge_de || item.badge_en || '') } : undefined,
+      imageStyle: String(item.image_style || 'pink'),
+      imageUrl: String(item.image_url || ''),
       available: Boolean(item.available),
-      sortOrder: item.sort_order || 0,
-      includedItemIds: item.included_item_ids ?? offerDescription.includedItemIds,
-      sizes, optionGroupIds:item.option_group_ids||[],
+      sortOrder: Number(item.sort_order || 0),
+      includedItemIds: Array.isArray(item.included_item_ids) ? item.included_item_ids as string[] : offerDescription.includedItemIds,
+      sizes, optionGroupIds:Array.isArray(item.option_group_ids) ? item.option_group_ids as string[] : [],
       optionGroups:[
-        ...(sizes.length?[{id:'__size__',name:{en:'Size',de:'Größe'},mode:'single' as const,required:true,min:1,max:1,options:sizes.map(size=>({id:size.id,name:size.name,priceDelta:Math.max(0,size.price-Number(item.price||0)),available:size.available}))}]:[]),
-        ...optionGroups.filter(group=>group.active&&(group.linkedCategoryIds.includes(item.category_id)||group.linkedItemIds.includes(item.id))),
+        ...(sizes.length?[{id:'__size__',name:{en:'Size',de:'Größe'},mode:'single' as const,required:true,min:1,max:1,options:sizes.map(size=>({id:size.id,name:size.name,priceDelta:Math.max(0,size.price-itemPrice),available:size.available}))}]:[]),
+        ...optionGroups.filter(group=>group.active&&(group.linkedCategoryIds.includes(categoryId)||group.linkedItemIds.includes(itemId))),
       ],
-      preparation: {
-        station: item.prep_station || 'kitchen',
-        estimatedMinutes: Number(item.prep_minutes || 0),
-        ingredients: { en:item.prep_ingredients_en || [], de:item.prep_ingredients_de || [] },
-        tools: { en:item.prep_tools_en || [], de:item.prep_tools_de || [] },
-        steps: { en:item.prep_steps_en || [], de:item.prep_steps_de || [] },
-        warning: { en:item.prep_warning_en || '', de:item.prep_warning_de || '' },
-      },
     };
   });
 
-  const privateState = await loadPrivateRemoteState(restaurantId);
+  const privateState = includePrivate ? await loadPrivateRemoteState(restaurantId) : { orders: fallback.orders, users: fallback.users };
 
   return {
     categories,
     items,
     optionGroups,
-    hours: (hoursResult.data || []).length
-      ? (hoursResult.data || []).map((hour) => ({
-          day: hour.day,
-          open: hour.open_time,
-          close: hour.close_time,
+    hours: hourRows.length
+      ? hourRows.map((hour) => ({
+          day: String(hour.day),
+          open: String(hour.open_time),
+          close: String(hour.close_time),
           enabled: Boolean(hour.enabled),
         }))
       : fallback.hours,
     orders: privateState.orders,
     users: privateState.users,
-    theme: restaurantToTheme(restaurant, fallback.theme, contentResult.data as DbContentSettings | null),
+    theme: restaurantToTheme(restaurant, fallback.theme, bootstrap.content || null),
     layout: restaurantToLayout(restaurant, fallback.layout),
   };
 }

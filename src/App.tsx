@@ -129,6 +129,7 @@ const storageKeys = {
   layout: 'sweezypop.layout',
   items: 'sweezypop.items',
   categories: 'sweezypop.categories',
+  optionGroups: 'sweezypop.optionGroups',
   orders: 'sweezypop.orders',
   users: 'sweezypop.users',
   theme: 'sweezypop.theme',
@@ -291,9 +292,9 @@ function AppContent() {
     }
   }, [locale]);
   const [layout, setLayout] = useState<MenuLayout>(() => normalizeLayout(loadStored(storageKeys.layout, 'grid')));
-  const [items, setItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [optionGroups, setOptionGroups] = useState<SharedOptionGroup[]>([]);
+  const [items, setItems] = useState<MenuItem[]>(() => safeArray(loadStored(storageKeys.items, []), []));
+  const [categories, setCategories] = useState<Category[]>(() => safeArray(loadStored(storageKeys.categories, []), []));
+  const [optionGroups, setOptionGroups] = useState<SharedOptionGroup[]>(() => safeArray(loadStored(storageKeys.optionGroups, []), []));
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [theme, setTheme] = useState<ThemeSettings>(() => normalizeThemeSettings(loadStored(storageKeys.theme, defaultTheme)));
@@ -588,6 +589,7 @@ function AppContent() {
   useEffect(() => saveStored(storageKeys.layout, layout), [layout]);
   useEffect(() => saveStored(storageKeys.items, items), [items]);
   useEffect(() => saveStored(storageKeys.categories, categories), [categories]);
+  useEffect(() => saveStored(storageKeys.optionGroups, optionGroups), [optionGroups]);
   useEffect(() => {
     window.localStorage.removeItem(storageKeys.orders);
     window.localStorage.removeItem(storageKeys.users);
@@ -663,7 +665,7 @@ function AppContent() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     const fallback: RemoteState = { categories, items, optionGroups, orders, users, theme: normalizeThemeSettings(theme), hours, layout };
-    loadRemoteState(fallback)
+    loadRemoteState(fallback, false)
       .then((remoteState) => {
         if (!remoteState) return;
         applyRemoteState(remoteState);
@@ -797,15 +799,16 @@ function AppContent() {
       if (busy || saveInFlight.current || document.hidden) return;
       busy = true;
       try {
-        const remote = await loadRemoteState({ categories, items, optionGroups, orders:[], users:[], theme, hours, layout });
+        const remote = await loadRemoteState({ categories, items, optionGroups, orders:[], users:[], theme, hours, layout }, Boolean(authRole));
         if (!remote || stopped) return;
         if (!authRole) applyRemoteState(remote);
         else { setOrders(remote.orders); }
         setLoadError('');
-      } catch { if (!stopped) setLoadError('Verbindung unterbrochen. Daten werden erneut geladen.'); }
+      } catch { if (!stopped && authRole) setLoadError('Verbindung unterbrochen. Daten werden erneut geladen.'); }
       finally { busy = false; }
     };
     const interval = window.setInterval(() => void refresh(), 5000);
+    void refresh();
     window.addEventListener('online', refresh);
     window.addEventListener('focus', refresh);
     return () => { stopped = true; window.clearInterval(interval); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
@@ -960,8 +963,8 @@ function AppContent() {
         />
       )}
       {view !== 'staff' && view !== 'cashier' && <TopNav setView={setView} locale={locale} setLocale={setLocale} theme={theme} authRole={authRole} onLogout={handleLogout} />}
-      {(loadError || (authRole && saveMessage)) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
-      {!isSupabaseConfigured && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
+      {authRole && (loadError || saveMessage) && <div className="sync-message" role="status">{loadError || saveMessage}</div>}
+      {authRole && !isSupabaseConfigured && <p className="form-error" role="alert">Supabase-Konfiguration fehlt. Bestellungen sind deaktiviert.</p>}
       {view === 'staff' && authRole === 'staff' && authProfile ? (
         <StaffWorkspace
           locale={locale}
@@ -1121,7 +1124,7 @@ function LoaderScreen({ onComplete }: { onComplete: () => void }) {
       <img
         src="/sweezypop-loader-brand.svg"
         alt="SweezyPop"
-        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 250 : 3200)}
+        onLoad={() => finish(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 180 : 900)}
         onError={() => finish(600)}
       />
     </div>
@@ -1583,7 +1586,7 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
   const suppressOfferClickRef = useRef(false);
 
   const startOffersDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
     const track = offersTrackRef.current;
     if (!track) return;
     dragStateRef.current = {
@@ -1607,7 +1610,7 @@ function FeaturedOffers({ offers, items, locale, onAdd }: { offers: MenuItem[]; 
     }
     if (drag.moved) {
       event.preventDefault();
-      track.scrollLeft = drag.startScrollLeft - distance * 1.5;
+      track.scrollLeft = drag.startScrollLeft - distance;
     }
   };
 
