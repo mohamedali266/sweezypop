@@ -3079,6 +3079,16 @@ button {
     padding: 15px;
   }
 
+  .offer-card-meta {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-top: 10px;
+  }
+
+  .offer-card-meta span {
+    justify-self: start;
+  }
+
   .offer-card-body p {
     display: -webkit-box;
     overflow: hidden;
