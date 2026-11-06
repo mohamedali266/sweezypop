@@ -235,6 +235,32 @@ export async function uploadBrandAsset(kind: 'website' | 'app' | 'favicon', file
   return `${data.publicUrl}?v=${Date.now()}`;
 }
 
+export async function uploadMenuImage(kind: 'items' | 'offers', file: File) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+  const allowedTypes: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+  };
+  const extension = allowedTypes[file.type];
+  if (!extension || file.size <= 0 || file.size > 5_242_880) {
+    throw new Error('Choose a PNG, JPEG, or WebP image up to 5 MB.');
+  }
+
+  const restaurant = await getRestaurant();
+  const objectPath = `${restaurant.id}/${kind}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from('menu-assets').upload(objectPath, file, {
+    cacheControl: '31536000',
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('menu-assets').getPublicUrl(objectPath);
+  if (!data.publicUrl) throw new Error('The uploaded image URL could not be created.');
+  return data.publicUrl;
+}
+
 export async function loadPublicReviews(limit = 16): Promise<CustomerReview[]> {
   if (!isSupabaseConfigured || !supabase) return [];
   const { data, error } = await supabase.rpc('get_public_reviews', { p_slug: restaurantSlug, p_limit: limit });
@@ -301,6 +327,14 @@ type PublicMenuBootstrap = {
   content?: DbContentSettings | null;
 };
 
+const publicSupabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+function publicMenuImageUrl(value: string) {
+  const marker = value.match(/^legacy-image:([A-Za-z0-9_-]{1,100}):([a-f0-9]{32})$/);
+  if (!marker || !publicSupabaseUrl) return value;
+  const query = new URLSearchParams({ slug: restaurantSlug, item: marker[1], v: marker[2] });
+  return `${publicSupabaseUrl}/functions/v1/menu-image?${query.toString()}`;
+}
+
 export async function loadRemoteState(fallback: RemoteState, includePrivate = true): Promise<RemoteState | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   const { data, error } = await supabase.rpc('get_public_menu_bootstrap', { p_slug: restaurantSlug });
@@ -337,7 +371,7 @@ export async function loadRemoteState(fallback: RemoteState, includePrivate = tr
       price: itemPrice,
       badge: item.badge_en || item.badge_de ? { en: String(item.badge_en || ''), de: String(item.badge_de || item.badge_en || '') } : undefined,
       imageStyle: String(item.image_style || 'pink'),
-      imageUrl: String(item.image_url || ''),
+      imageUrl: publicMenuImageUrl(String(item.image_url || '')),
       available: Boolean(item.available),
       sortOrder: Number(item.sort_order || 0),
       includedItemIds: Array.isArray(item.included_item_ids) ? item.included_item_ids as string[] : offerDescription.includedItemIds,
@@ -370,7 +404,7 @@ export async function loadRemoteState(fallback: RemoteState, includePrivate = tr
   };
 }
 
-async function loadPrivateRemoteState(restaurantId: string) {
+export async function loadPrivateRemoteState(restaurantId: string) {
   if (!supabase) return { orders: [], users: [] };
   const { data: session } = await supabase.auth.getSession();
   if (!session.session) return { orders: [], users: [] };

@@ -63,6 +63,7 @@ import {
   createAdminUser,
   deleteAdminUser,
   createRemoteOrder,
+  loadPrivateRemoteState,
   loadRemoteState,
   registerOrderPush,
   resetAdminUserPassword,
@@ -71,6 +72,7 @@ import {
   saveRemoteUsers,
   trackRemoteOrder,
   uploadBrandAsset,
+  uploadMenuImage,
   updateRemoteOrderStatus,
   type AdminUserPayload,
   type RemoteState,
@@ -95,6 +97,7 @@ function applicationServerKey(value: string) {
   return Uint8Array.from(decoded, character => character.charCodeAt(0));
 }
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers' || Boolean(item.includedItemIds?.length);
+const isAllowedImageUrl = (value: string) => !value || (value.length <= 2048 && /^https:\/\/[^\s]+$/i.test(value));
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
 const socialPlatformOptions = [
   { value: 'instagram', label: 'Instagram', iconSlug: 'instagram' },
@@ -795,26 +798,40 @@ function AppContent() {
     if (!remoteReady || !isSupabaseConfigured || authRole === 'staff') return;
     let stopped = false;
     let busy = false;
+    let lastRefreshAt = Date.now();
+    const minimumRefreshGap = authRole ? 10_000 : 60_000;
     const refresh = async () => {
-      if (busy || saveInFlight.current || document.hidden) return;
+      if (busy || saveInFlight.current || document.hidden || Date.now() - lastRefreshAt < minimumRefreshGap) return;
       busy = true;
+      lastRefreshAt = Date.now();
       try {
-        const remote = await loadRemoteState({ categories, items, optionGroups, orders:[], users:[], theme, hours, layout }, Boolean(authRole));
-        if (!remote || stopped) return;
-        if (!authRole) applyRemoteState(remote);
-        else { setOrders(remote.orders); }
+        if (authRole && authProfile) {
+          const privateState = await loadPrivateRemoteState(authProfile.restaurantId);
+          if (!stopped) setOrders(privateState.orders);
+        } else {
+          const remote = await loadRemoteState({ categories, items, optionGroups, orders:[], users:[], theme, hours, layout }, false);
+          if (remote && !stopped) applyRemoteState(remote);
+        }
         setLoadError('');
       } catch { if (!stopped && authRole) setLoadError('Verbindung unterbrochen. Daten werden erneut geladen.'); }
       finally { busy = false; }
     };
-    const interval = window.setInterval(() => void refresh(), 5000);
-    void refresh();
-    window.addEventListener('online', refresh);
+    const interval = window.setInterval(() => void refresh(), authRole ? 15_000 : 300_000);
+    const refreshAfterReconnect = () => {
+      lastRefreshAt = 0;
+      void refresh();
+    };
+    window.addEventListener('online', refreshAfterReconnect);
     window.addEventListener('focus', refresh);
-    return () => { stopped = true; window.clearInterval(interval); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      window.removeEventListener('online', refreshAfterReconnect);
+      window.removeEventListener('focus', refresh);
+    };
     // Current catalog edits must never be overwritten by background order refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authRole, remoteReady]);
+  }, [authProfile, authRole, remoteReady]);
 
   const addToCart = (item: MenuItem, selections: ProductSelection[] = []) => {
     if (!canOrder(item, items)) return;
@@ -2395,6 +2412,7 @@ function ItemsManager({
     sizes: [] as ProductSize[],
   });
   const [formError, setFormError] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
 
   useEffect(() => {
     if (!formOpen) return;
@@ -2457,14 +2475,17 @@ function ItemsManager({
     setDraggedId(null);
   };
 
-  const handleImageFile = (file: File) => {
-    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2_000_000) {
-      setFormError(t(locale, 'imageFileRequired'));
-      return;
+  const handleImageFile = async (file: File) => {
+    setImageUploading(true);
+    setFormError('');
+    try {
+      const imageUrl = await uploadMenuImage('items', file);
+      setForm((current) => ({ ...current, imageUrl }));
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : t(locale, 'imageFileRequired'));
+    } finally {
+      setImageUploading(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => setForm((current) => ({ ...current, imageUrl: String(reader.result || '') }));
-    reader.readAsDataURL(file);
   };
 
   const submitItem = (event: FormEvent<HTMLFormElement>) => {
@@ -2481,6 +2502,14 @@ function ItemsManager({
     }
     if (!Number.isFinite(price) || price <= 0) {
       setFormError(t(locale, 'priceRequired'));
+      return;
+    }
+    if (imageUploading) {
+      setFormError(locale === 'de' ? 'Das Bild wird noch hochgeladen.' : 'The image is still uploading.');
+      return;
+    }
+    if (!isAllowedImageUrl(form.imageUrl.trim())) {
+      setFormError(locale === 'de' ? 'Bitte ein Bild hochladen oder eine sichere HTTPS-Adresse verwenden.' : 'Upload an image or use a secure HTTPS URL.');
       return;
     }
     const invalidSizes = form.hasSizes && (!validSizes.length || !validSizes.some((size) => size.available) || validSizes.some((size) => !size.name.en.trim() || !size.name.de.trim() || !Number.isFinite(Number(size.price)) || Number(size.price) <= 0));
@@ -2645,13 +2674,14 @@ function ItemsManager({
                 </div>
                 <label>
                   {t(locale, 'imageUrl')}
-                  <input value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." />
+                  <input type="url" value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." />
                 </label>
                 <label className="small-action neutral upload-button">
                   <Image size={16} /> {t(locale, 'uploadImage')}
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={imageUploading}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (file) handleImageFile(file);
@@ -2707,7 +2737,7 @@ function ItemsManager({
               <button type="button" className="small-action neutral" onClick={() => setFormOpen(false)}>
                 {t(locale, 'cancel')}
               </button>
-              <button type="submit" className="small-action">
+              <button type="submit" className="small-action" disabled={imageUploading}>
                 <Save size={16} /> {t(locale, 'saveItem')}
               </button>
             </div>
@@ -2795,6 +2825,7 @@ function OffersManager({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [price, setPrice] = useState(12);
   const [error, setError] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
   const availableItems = items.filter((item) => !isOfferItem(item));
   const publishedOffers = items.filter(isOfferItem);
 
@@ -2832,14 +2863,16 @@ function OffersManager({
   const selectedTotal = selectedItems.reduce((sum, item) => sum + item.price, 0);
   const discount = Math.max(0, selectedTotal - price);
 
-  const handleOfferImageFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError(t(locale, 'imageFileRequired'));
-      return;
+  const handleOfferImageFile = async (file: File) => {
+    setImageUploading(true);
+    setError('');
+    try {
+      setImageUrl(await uploadMenuImage('offers', file));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t(locale, 'imageFileRequired'));
+    } finally {
+      setImageUploading(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => setImageUrl(String(reader.result || ''));
-    reader.readAsDataURL(file);
   };
 
   const submitOffer = () => {
@@ -2853,6 +2886,14 @@ function OffersManager({
     }
     if (!Number.isFinite(price) || price <= 0) {
       setError(t(locale, 'offerPriceRequired'));
+      return;
+    }
+    if (imageUploading) {
+      setError(locale === 'de' ? 'Das Bild wird noch hochgeladen.' : 'The image is still uploading.');
+      return;
+    }
+    if (!isAllowedImageUrl(imageUrl.trim())) {
+      setError(locale === 'de' ? 'Bitte ein Bild hochladen oder eine sichere HTTPS-Adresse verwenden.' : 'Upload an image or use a secure HTTPS URL.');
       return;
     }
 
@@ -2949,13 +2990,14 @@ function OffersManager({
                   </label>
                   <label>
                     {t(locale, 'offerImageUrl')}
-                    <input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://..." />
+                    <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://..." />
                   </label>
                   <label className="small-action neutral upload-button">
                     <Image size={16} /> {t(locale, 'uploadOfferImage')}
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={imageUploading}
                       onChange={(event) => {
                         const file = event.target.files?.[0];
                         if (file) handleOfferImageFile(file);
@@ -3007,7 +3049,7 @@ function OffersManager({
               <button type="button" className="small-action neutral" onClick={() => setFormOpen(false)}>
                 {t(locale, 'cancel')}
               </button>
-              <button type="button" className="small-action" onClick={submitOffer}>
+              <button type="button" className="small-action" onClick={submitOffer} disabled={imageUploading}>
                 <Save size={16} /> {t(locale, 'saveOffer')}
               </button>
             </div>
