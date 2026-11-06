@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, ErrorInfo, FormEvent, PointerEvent as ReactPointerEvent, ReactNode, SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -98,6 +98,10 @@ function applicationServerKey(value: string) {
 }
 const isOfferItem = (item: MenuItem) => item.categoryId === 'offers' || Boolean(item.includedItemIds?.length);
 const isAllowedImageUrl = (value: string) => !value || (value.length <= 2048 && /^https:\/\/[^\s]+$/i.test(value));
+const hideBrokenMenuImage = (event: SyntheticEvent<HTMLImageElement>) => {
+  event.currentTarget.hidden = true;
+  event.currentTarget.closest('.food-art')?.classList.remove('has-image');
+};
 const configuredMenuUrl = import.meta.env.VITE_MENU_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : defaultTheme.menuUrl);
 const socialPlatformOptions = [
   { value: 'instagram', label: 'Instagram', iconSlug: 'instagram' },
@@ -1698,7 +1702,7 @@ function OfferCard({ offer, locale, onOpen }: { offer: MenuItem; locale: Locale;
   return (
     <button type="button" className="offer-card" onClick={() => onOpen(offer)}>
       <div className={`offer-card-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
-        {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} loading="lazy" draggable="false" /> : <BadgeDollarSign size={38} />}
+        {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} loading="lazy" draggable="false" onError={hideBrokenMenuImage} /> : <BadgeDollarSign size={38} />}
         {offer.badge && <span>{offer.badge[locale]}</span>}
       </div>
       <div className="offer-card-body">
@@ -1736,7 +1740,7 @@ function OfferDetailsModal({
     <div className="modal-overlay" role="presentation" onClick={onClose}>
       <article className="offer-detail-card animated-panel" role="dialog" aria-modal="true" aria-label={offer.name[locale]} onClick={(event) => event.stopPropagation()}>
         <div className={`offer-detail-media food-art ${offer.imageStyle} ${offer.imageUrl ? 'has-image' : ''}`}>
-          {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} /> : <BadgeDollarSign size={48} />}
+          {offer.imageUrl ? <img src={offer.imageUrl} alt={offer.name[locale]} onError={hideBrokenMenuImage} /> : <BadgeDollarSign size={48} />}
           {offer.badge && <span>{offer.badge[locale]}</span>}
         </div>
         <div className="offer-detail-content">
@@ -1756,7 +1760,7 @@ function OfferDetailsModal({
               includedItems.map((item) => (
                 <div key={item.id} className="included-offer-item">
                   <div className={`selection-thumb food-art ${item.imageStyle} ${item.imageUrl ? 'has-image' : ''}`}>
-                    {item.imageUrl && <img src={item.imageUrl} alt="" />}
+                    {item.imageUrl && <img src={item.imageUrl} alt="" onError={hideBrokenMenuImage} />}
                   </div>
                   <span>{item.name[locale]}</span>
                   <strong>{currency.format(item.price)}</strong>
@@ -1783,7 +1787,7 @@ function MenuCard({ item, locale, layout, onAdd }: { item: MenuItem; locale: Loc
   return (
     <article className={`menu-card ${layout}`}>
       <div className={`food-art ${item.imageStyle} ${item.imageUrl ? 'has-image' : ''}`}>
-        {item.imageUrl && <img src={item.imageUrl} alt={item.name[locale]} loading="lazy" />}
+        {item.imageUrl && <img src={item.imageUrl} alt={item.name[locale]} loading="lazy" onError={hideBrokenMenuImage} />}
         {item.badge && <span>{item.badge[locale]}</span>}
       </div>
       <div className="menu-card-body">
