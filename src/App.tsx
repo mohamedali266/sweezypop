@@ -2240,9 +2240,7 @@ function Dashboard(props: {
             <AppearanceSettings
               locale={props.locale}
               theme={props.theme}
-              setTheme={props.setTheme}
               layout={props.layout}
-              setLayout={props.setLayout}
               persistSiteSettings={props.persistSiteSettings}
             />
           )}
@@ -3117,16 +3115,12 @@ function BrandAssetUpload({
 function AppearanceSettings({
   locale,
   theme,
-  setTheme,
   layout,
-  setLayout,
   persistSiteSettings,
 }: {
   locale: Locale;
   theme: ThemeSettings;
-  setTheme: (theme: ThemeSettings) => void;
   layout: MenuLayout;
-  setLayout: (layout: MenuLayout) => void;
   persistSiteSettings: (theme: ThemeSettings, layout: MenuLayout) => Promise<void>;
 }) {
   const [draftTheme, setDraftTheme] = useState<ThemeSettings>(theme);
@@ -3178,8 +3172,6 @@ function AppearanceSettings({
     setSaving(true);
     setSaveError('');
     try {
-      setTheme(draftTheme);
-      setLayout(draftLayout);
       await persistSiteSettings(draftTheme, draftLayout);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1800);

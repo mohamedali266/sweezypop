@@ -197,31 +197,26 @@ function restaurantSettingsPayload(theme: ThemeSettings) {
   };
 }
 
-async function saveOptionalRestaurantSettings(restaurantId: string, theme: ThemeSettings, layout: MenuLayout) {
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('restaurants')
-    .update({
-      menu_layout: layout,
-      social_links: theme.socialLinks || [],
-      phone_country_code: theme.phoneCountryCode || null,
-      phone_number: theme.phoneNumber || null,
-    })
-    .eq('id', restaurantId);
-
-  if (error) {
-    throw error;
-  }
-}
-
 export async function saveRemoteSiteSettings(theme: ThemeSettings, layout: MenuLayout) {
   if (!isSupabaseConfigured || !supabase) return;
-  const restaurant = await getRestaurant();
-  const restaurantId = restaurant.id;
-
-  const { error } = await supabase.from('restaurants').update(restaurantSettingsPayload(theme)).eq('id', restaurantId);
+  const settings = {
+    ...restaurantSettingsPayload(theme),
+    social_links: theme.socialLinks || [],
+    phone_country_code: theme.phoneCountryCode || null,
+    phone_number: theme.phoneNumber || null,
+  };
+  const { data, error } = await supabase.rpc('save_site_settings', {
+    p_settings: settings,
+    p_layout: layout,
+  });
   if (error) throw error;
-  await saveOptionalRestaurantSettings(restaurantId, theme, layout);
+
+  const saved = data as { logo_url?: string | null; app_icon_url?: string | null; favicon_url?: string | null; menu_layout?: string | null } | null;
+  const expected = [theme.logoUrl || null, theme.appIconUrl || null, theme.faviconUrl || null, layout];
+  const actual = [saved?.logo_url || null, saved?.app_icon_url || null, saved?.favicon_url || null, saved?.menu_layout || null];
+  if (!saved || expected.some((value, index) => value !== actual[index])) {
+    throw new Error('The server did not confirm the saved branding. Please retry.');
+  }
 }
 
 export async function uploadBrandAsset(kind: 'website' | 'app' | 'favicon', file: File) {

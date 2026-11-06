@@ -1856,6 +1856,12 @@ button {
   font-size: 1.6rem;
 }
 
+.brand-preview .brand-mark.has-image {
+  width: min(180px, 42vw);
+  height: 72px;
+  padding: 0;
+}
+
 .brand-preview strong,
 .brand-preview span {
   display: block;

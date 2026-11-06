@@ -13,7 +13,7 @@ create function auth.role() returns text language sql as $$ select case when aut
 const schema = (await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
 await db.exec(schema);
 await db.exec(`grant usage on schema public,auth to anon,authenticated; grant all on all tables in schema public to anon,authenticated;`);
-for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql','202611040001_product_options.sql','202611040002_option_availability_guard.sql','202611040003_shared_product_options.sql','202611040004_size_base_price_guard.sql','202611040005_option_availability_integrity.sql']) {
+for (const migration of ['202610140000_pre_pos_snapshot.sql','202610140001_order_integrity.sql','202610140002_catalog_changes.sql','202610140003_profile_changes.sql','202610160001_orders_workspace.sql','202610220001_staff_operations.sql','202610230001_staff_three_stage_workflow.sql','202610230002_staff_cancel_new_orders.sql','202610270001_staff_guides.sql','202610280001_public_order_tracking.sql','202610280002_order_feedback.sql','202610280003_reviews_footer.sql','202610280004_reviews_security.sql','202610280005_staff_order_realtime_signal.sql','202611010001_staff_guide_images_and_order_push.sql','202611020001_cashier_operations.sql','202611040001_product_options.sql','202611040002_option_availability_guard.sql','202611040003_shared_product_options.sql','202611040004_size_base_price_guard.sql','202611040005_option_availability_integrity.sql','202611060003_verified_site_settings.sql']) {
   await db.exec(await readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
 }
 const admin='00000000-0000-4000-8000-000000000001';
@@ -97,6 +97,26 @@ test('review moderation is manager controlled and footer content is admin only',
   assert.equal(publicReviews[0].display_name,'Anna');
   assert.equal(publicReviews[0].feedback,'Great service');
   await db.query("select set_config('test.uid','',false)");
+});
+
+test('site branding save is atomic, verified and manager only',async () => {
+  const settings={
+    name:'Sweezy pop',logo_text:'Sweezy pop',logo_url:'https://assets.test/website.svg',
+    app_icon_url:'https://assets.test/app.png',favicon_url:'https://assets.test/favicon.png',menu_url:'https://menu.test',
+    primary_color:'#aa22cc',accent_color:'#22aa99',lavender_color:'#bb99ee',background_color:'#fff7fb',
+    surface_color:'#ffffff',text_color:'#211b33',muted_text_color:'#756a80',button_text_color:'#ffffff',
+    card_color:'#ffffff',border_color:'#eadff0',social_links:[],phone_country_code:'+49',phone_number:'12345',
+  };
+  await db.query("select set_config('test.uid',$1,false)",[owner]);
+  const savedSettings=(await db.query('select save_site_settings($1::jsonb,$2) result',[JSON.stringify(settings),'grid'])).rows[0].result;
+  assert.equal(savedSettings.logo_url,settings.logo_url);
+  assert.equal(savedSettings.app_icon_url,settings.app_icon_url);
+  assert.equal(savedSettings.favicon_url,settings.favicon_url);
+  assert.deepEqual((await db.query('select logo_url,app_icon_url,favicon_url from restaurants where id=$1',['sweezypop'])).rows[0],{
+    logo_url:settings.logo_url,app_icon_url:settings.app_icon_url,favicon_url:settings.favicon_url,
+  });
+  await db.query("select set_config('test.uid',$1,false)",[staff]);
+  await assert.rejects(db.query('select save_site_settings($1::jsonb,$2)',[JSON.stringify(settings),'grid']),/Access denied/);
 });
 test('invalid line rolls back the entire order',async () => {
   const before=(await db.query('select count(*)::int as n from orders')).rows[0].n;
