@@ -1,10 +1,11 @@
 /* global self, caches, fetch, URL, Response */
 
-const CACHE_NAME = 'sweezypop-static-v11';
+const CACHE_NAME = 'sweezypop-static-v12';
 const CORE_ASSETS = [
   '/',
   '/brand/sweezypop-logo-3d-v3.png',
   '/brand/sweezypop-loader-v2.webp',
+  '/brand/sweezypop-hero-background-desktop-v1.webp',
   '/brand/sweezypop-app-icon-v2-64.png',
   '/brand/sweezypop-app-icon-v2-192.png',
   '/brand/sweezypop-app-icon-v2-512.png',

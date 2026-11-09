@@ -1507,15 +1507,11 @@ function MenuPage(props: {
   return (
     <main className="menu-shell">
       <section className="menu-hero">
-        <div className="hero-copy">
+        <div className="hero-controls">
           <span className="eyebrow">{today ? `${props.locale === 'de' ? 'Heute' : 'Today'} ${today.open}–${today.close}` : props.locale === 'de' ? 'Heute geschlossen' : 'Closed today'}</span>
-          <h1>{props.theme.siteName}</h1>
-          <p>{t(props.locale, 'heroCopy')}</p>
-          <div className="hero-actions">
-            <a href="#menu-list" className="primary-action">
-              {t(props.locale, 'orderNow')}
-            </a>
-          </div>
+          <a href="#menu-list" className="primary-action">
+            {t(props.locale, 'orderNow')}
+          </a>
         </div>
       </section>
 

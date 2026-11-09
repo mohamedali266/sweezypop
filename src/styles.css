@@ -447,14 +447,14 @@ button {
 
 .menu-hero {
   position: relative;
-  display: grid;
-  grid-template-columns: 1fr;
-  min-height: 360px;
+  height: clamp(430px, 52vw, 680px);
   overflow: hidden;
   border-radius: 28px;
-  background:
-    linear-gradient(90deg, rgba(33, 27, 51, 0.72), rgba(33, 27, 51, 0.08)),
-    linear-gradient(135deg, var(--primary), var(--lavender));
+  background-color: #5a176f;
+  background-image: url('/brand/sweezypop-hero-background-desktop-v1.webp');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   box-shadow: 0 24px 70px rgba(91, 59, 121, 0.18);
 }
 
@@ -465,14 +465,15 @@ button {
   border-radius: inherit;
 }
 
-.hero-copy {
-  position: relative;
+.hero-controls {
+  position: absolute;
   z-index: 1;
-  align-self: center;
-  width: min(780px, 100%);
-  max-width: none;
-  padding: clamp(38px, 6vw, 76px);
-  color: white;
+  bottom: 12%;
+  left: clamp(28px, 5.5%, 76px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: flex-start;
 }
 
 .eyebrow,
@@ -489,27 +490,6 @@ button {
 .eyebrow {
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.18);
-}
-
-.hero-copy h1 {
-  margin: 18px 0 12px;
-  font-size: clamp(3rem, 7vw, 6.2rem);
-  line-height: 0.9;
-  letter-spacing: 0;
-}
-
-.hero-copy p {
-  max-width: 540px;
-  margin: 0 0 24px;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 1.12rem;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
 }
 
 .primary-action {
@@ -3000,51 +2980,34 @@ button {
   }
 
   .menu-hero {
-    grid-template-columns: 1fr;
-    min-height: auto;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1672 / 941;
     border-radius: 18px;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--primary), #211b33 34%), var(--lavender));
+    background-color: #5a176f;
+    background-image: url('/brand/sweezypop-hero-background-desktop-v1.webp');
+    background-position: center;
+    background-size: 100% 100%;
   }
 
-  .hero-copy {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) max-content;
-    gap: 10px 12px;
-    align-items: center;
-    max-width: none;
-    padding: 18px;
+  .hero-controls {
+    bottom: 7%;
+    left: 5.5%;
+    gap: 6px;
   }
 
-  .hero-copy .eyebrow {
-    grid-column: 1 / -1;
-    padding: 6px 10px;
-    font-size: 0.78rem;
+  .hero-controls .eyebrow {
+    padding: 4px 7px;
+    font-size: clamp(0.54rem, 2.4vw, 0.72rem);
+    background: rgba(33, 27, 51, 0.62);
+    backdrop-filter: blur(8px);
   }
 
-  .hero-copy h1 {
-    margin: 0;
-    font-size: 1.75rem;
-    line-height: 1.05;
-  }
-
-  .hero-copy p {
-    grid-column: 1 / -1;
-    margin: 0;
-    max-width: 26rem;
-    font-size: 0.92rem;
-    line-height: 1.45;
-  }
-
-  .hero-actions {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: end;
-  }
-
-  .hero-actions .primary-action {
-    min-height: 40px;
-    padding: 0 12px;
-    font-size: 0.86rem;
+  .hero-controls .primary-action {
+    min-height: 28px;
+    padding: 0 11px;
+    border-radius: 10px;
+    font-size: clamp(0.58rem, 2.5vw, 0.76rem);
     white-space: nowrap;
   }
 
