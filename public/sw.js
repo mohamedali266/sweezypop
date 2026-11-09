@@ -1,12 +1,12 @@
 /* global self, caches, fetch, URL, Response */
 
-const CACHE_NAME = 'sweezypop-static-v9';
+const CACHE_NAME = 'sweezypop-static-v10';
 const CORE_ASSETS = [
   '/',
-  '/pwa-icon.svg',
-  '/pwa-icon-192.png',
-  '/pwa-icon-512.png',
-  '/sweezypop-loader-brand.svg',
+  '/brand/sweezypop-logo-3d-v2.png',
+  '/brand/sweezypop-app-icon-v2-64.png',
+  '/brand/sweezypop-app-icon-v2-192.png',
+  '/brand/sweezypop-app-icon-v2-512.png',
   '/order-received.gif',
   '/order-preparing.gif',
   '/order-ready.gif',
@@ -51,8 +51,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Sweezypop';
   event.waitUntil(self.registration.showNotification(title, {
     body:data.body || '',
-    icon:data.icon || '/pwa-icon-192.png',
-    badge:data.badge || '/pwa-icon-192.png',
+    icon:data.icon || '/brand/sweezypop-app-icon-v2-192.png',
+    badge:data.badge || '/brand/sweezypop-app-icon-v2-192.png',
     tag:data.tag || 'sweezypop-order',
     renotify:true,
     data:{ url:data.url || '/' },

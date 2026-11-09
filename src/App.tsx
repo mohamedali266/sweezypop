@@ -93,6 +93,10 @@ type BeforeInstallPromptEvent = Event & {
 
 const currency = euro;
 const vapidPublicKey = 'BDe3QvPdBZho8ZTk-7kai0luVGllvaZ-cicmALSi052rBa_8BBT4PbCZOiTvkzT30l0AqNDPsQdpphs9zDq3Ox4';
+const brandLogoUrl = '/brand/sweezypop-logo-3d-v2.png';
+const brandAppIcon512Url = '/brand/sweezypop-app-icon-v2-512.png';
+const brandAppIcon192Url = '/brand/sweezypop-app-icon-v2-192.png';
+const brandFaviconUrl = '/brand/sweezypop-app-icon-v2-64.png';
 function applicationServerKey(value: string) {
   const padding = '='.repeat((4 - value.length % 4) % 4);
   const decoded = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
@@ -235,10 +239,32 @@ function SocialAppIcon({ link }: { link: SocialLink }) {
 }
 
 function BrandMark({ theme }: { theme: ThemeSettings }) {
+  const logoUrl = theme.logoUrl || brandLogoUrl;
   return (
-    <span className={`brand-mark${theme.logoUrl ? ' has-image' : ''}`}>
-      {theme.logoUrl ? <img src={theme.logoUrl} alt={`${theme.siteName} logo`} /> : theme.logoText.slice(0, 1).toUpperCase()}
+    <span className="brand-mark has-image">
+      <img
+        src={logoUrl}
+        alt={`${theme.siteName} logo`}
+        onError={(event) => {
+          if (!event.currentTarget.src.endsWith(brandLogoUrl)) event.currentTarget.src = brandLogoUrl;
+        }}
+      />
     </span>
+  );
+}
+
+function AppIcon({ theme }: { theme: ThemeSettings }) {
+  return (
+    <img
+      className="app-icon"
+      src={theme.appIconUrl || brandAppIcon192Url}
+      alt=""
+      width={44}
+      height={44}
+      onError={(event) => {
+        if (!event.currentTarget.src.endsWith(brandAppIcon192Url)) event.currentTarget.src = brandAppIcon192Url;
+      }}
+    />
   );
 }
 
@@ -376,7 +402,7 @@ function AppContent() {
     if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
       new Notification(locale === 'de' ? `Bestellung #${order.orderNumber}` : `Order #${order.orderNumber}`, {
         body: message,
-        icon: theme.appIconUrl || '/pwa-icon-192.png',
+        icon: theme.appIconUrl || brandAppIcon192Url,
         tag: `order-${order.id}`,
       });
     }
@@ -483,7 +509,7 @@ function AppContent() {
       appleIcon.rel = 'apple-touch-icon';
       document.head.appendChild(appleIcon);
     }
-    const appIcon = theme.appIconUrl || '/pwa-icon-512.png';
+    const appIcon = theme.appIconUrl || brandAppIcon512Url;
     appleIcon.href = appIcon;
 
     let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -492,7 +518,7 @@ function AppContent() {
       favicon.rel = 'icon';
       document.head.appendChild(favicon);
     }
-    favicon.href = theme.faviconUrl || theme.appIconUrl || '/pwa-icon.svg';
+    favicon.href = theme.faviconUrl || theme.appIconUrl || brandFaviconUrl;
 
     let manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (!manifest) {
@@ -517,9 +543,9 @@ function AppContent() {
             { src: theme.appIconUrl, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ]
         : [
-            { src: '/pwa-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-            { src: '/pwa-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-            { src: '/pwa-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: brandAppIcon192Url, sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: brandAppIcon512Url, sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: brandAppIcon512Url, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
     };
     const manifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' }));
@@ -997,7 +1023,7 @@ function AppContent() {
         <StaffWorkspace
           locale={locale}
           siteName={theme.siteName}
-          logoUrl={theme.logoUrl}
+          logoUrl={theme.logoUrl || brandLogoUrl}
           staffName={authProfile.name}
           restaurantId={authProfile.restaurantId}
           onToggleLocale={() => setLocale(locale === 'de' ? 'en' : 'de')}
@@ -1007,7 +1033,8 @@ function AppContent() {
         <CashierWorkspace
           locale={locale}
           siteName={theme.siteName}
-          logoUrl={theme.logoUrl}
+          logoUrl={theme.logoUrl || brandLogoUrl}
+          appIconUrl={theme.appIconUrl || brandAppIcon192Url}
           cashierName={authProfile.name}
           restaurantId={authProfile.restaurantId}
           items={items}
@@ -1158,7 +1185,7 @@ function LoaderScreen({ ready, onComplete }: { ready: boolean; onComplete: () =>
   return (
     <div className={`app-loader${leaving ? ' is-leaving' : ''}`} role="status" aria-label="Loading Sweezypop">
       <img
-        src="/sweezypop-loader-brand.svg"
+        src={brandLogoUrl}
         alt="SweezyPop"
         onLoad={() => {
           logoLoadedAt.current = performance.now();
@@ -1215,7 +1242,7 @@ function InstallAppBanner({
     : (locale === 'de' ? 'Im Browsermenü „App installieren“ auswählen.' : 'Open the browser menu and choose Install app.');
   return (
     <aside className={`install-banner animated-panel install-banner--${audience}`} role="status" aria-label={title}>
-      <BrandMark theme={theme} />
+      <AppIcon theme={theme} />
       <div>
         <strong>{title}</strong>
         <p>{canInstall ? directCopy : manualCopy}</p>
@@ -2175,7 +2202,7 @@ function Dashboard(props: {
       <aside className={`dashboard-sidebar ${sidebarExpanded ? 'open' : ''}`} aria-label={t(props.locale, 'menu')}>
         <div className="dashboard-sidebar-head">
           <div className="owner-card">
-            <BrandMark theme={props.theme} />
+            <AppIcon theme={props.theme} />
             <div>
               <strong>{props.mode === 'admin' ? t(props.locale, 'adminWorkspace') : t(props.locale, 'ownerWorkspace')}</strong>
               <small>{props.theme.siteName}</small>
@@ -3361,7 +3388,7 @@ function AppearanceSettings({
                 locale={locale}
                 title={locale === 'de' ? 'Website-Logo' : 'Website logo'}
                 description={locale === 'de' ? 'Wird in Navigation, Anmeldung und Arbeitsbereichen angezeigt.' : 'Used in navigation, login, and workspace branding.'}
-                dimensions="600 x 200 px (3:1) or SVG"
+                dimensions="1200 x 600 px (2:1), PNG or SVG"
                 value={draftTheme.logoUrl}
                 kind="website"
                 onChange={(value) => updateBrandAsset('logoUrl', value)}

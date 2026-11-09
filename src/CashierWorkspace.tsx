@@ -63,11 +63,11 @@ function time(value: string, locale: Locale) {
 }
 
 export function CashierWorkspace(props: {
-  locale:Locale; siteName:string; logoUrl?:string; cashierName:string; restaurantId:string;
+  locale:Locale; siteName:string; logoUrl?:string; appIconUrl?:string; cashierName:string; restaurantId:string;
   items:MenuItem[]; categories:Category[]; theme:ThemeSettings;
   onToggleLocale:()=>void; onLogout:()=>void;
 }) {
-  const { locale, siteName, logoUrl, cashierName, restaurantId, items, categories, theme, onToggleLocale, onLogout } = props;
+  const { locale, siteName, logoUrl, appIconUrl, cashierName, restaurantId, items, categories, theme, onToggleLocale, onLogout } = props;
   const text = copy[locale];
   const [shift,setShift]=useState<CashierShift|null>(null);
   const [openingBalance,setOpeningBalance]=useState(0);
@@ -110,7 +110,7 @@ export function CashierWorkspace(props: {
           const first=freshReady[0];
           void navigator.serviceWorker.ready.then(registration=>registration.showNotification(
             locale==='de'?`Bestellung #${first.orderNumber} ist fertig`:`Order #${first.orderNumber} is ready`,
-            { body:first.customerName, icon:logoUrl||'/pwa-icon-192.png', badge:'/pwa-icon-192.png', tag:`cashier-ready-${first.id}` },
+            { body:first.customerName, icon:appIconUrl||'/brand/sweezypop-app-icon-v2-192.png', badge:'/brand/sweezypop-app-icon-v2-192.png', tag:`cashier-ready-${first.id}` },
           ));
         }
       }
@@ -121,7 +121,7 @@ export function CashierWorkspace(props: {
       setConnection(navigator.onLine?'reconnecting':'offline');
       setError(text.error);
     } finally { refreshing.current=false; }
-  },[locale,logoUrl,playAlert,text.error]);
+  },[appIconUrl,locale,playAlert,text.error]);
 
   useEffect(()=>{
     let active=true;

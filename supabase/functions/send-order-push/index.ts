@@ -59,8 +59,8 @@ Deno.serve(async (request) => {
       const payload = JSON.stringify({
         title:locale === 'de' ? `Bestellung #${order.order_number}` : `Order #${order.order_number}`,
         body:copy,
-        icon:'/pwa-icon-192.png',
-        badge:'/pwa-icon-192.png',
+        icon:'/brand/sweezypop-app-icon-v2-192.png',
+        badge:'/brand/sweezypop-app-icon-v2-192.png',
         tag:`order-${order.id}`,
         url:'/',
       });
