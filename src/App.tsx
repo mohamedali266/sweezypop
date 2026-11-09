@@ -93,12 +93,13 @@ type BeforeInstallPromptEvent = Event & {
 
 const currency = euro;
 const vapidPublicKey = 'BDe3QvPdBZho8ZTk-7kai0luVGllvaZ-cicmALSi052rBa_8BBT4PbCZOiTvkzT30l0AqNDPsQdpphs9zDq3Ox4';
-const brandLogoUrl = '/brand/sweezypop-logo-3d-v2.png';
+const brandLogoUrl = '/brand/sweezypop-logo-3d-v3.png';
+const loaderLogoUrl = '/brand/sweezypop-loader-v2.webp';
 const brandAppIcon512Url = '/brand/sweezypop-app-icon-v2-512.png';
 const brandAppIcon192Url = '/brand/sweezypop-app-icon-v2-192.png';
 const brandFaviconUrl = '/brand/sweezypop-app-icon-v2-64.png';
 const productionBrandAssets = {
-  logo: 'https://sweezypop-1.vercel.app/brand/sweezypop-logo-3d-v2.png?v=fa38cf6',
+  logo: 'https://sweezypop-1.vercel.app/brand/sweezypop-logo-3d-v3.png?v=header-safe-v3',
   appIcon: 'https://sweezypop-1.vercel.app/brand/sweezypop-app-icon-v2-512.png?v=fa38cf6',
   favicon: 'https://sweezypop-1.vercel.app/brand/sweezypop-app-icon-v2-64.png?v=fa38cf6',
 } as const;
@@ -1198,18 +1199,21 @@ function LoaderScreen({ ready, onComplete }: { ready: boolean; onComplete: () =>
 
   return (
     <div className={`app-loader${leaving ? ' is-leaving' : ''}`} role="status" aria-label="Loading Sweezypop">
-      <img
-        src={brandLogoUrl}
-        alt="SweezyPop"
-        onLoad={() => {
-          logoLoadedAt.current = performance.now();
-          setLogoLoaded(true);
-        }}
-        onError={() => {
-          logoLoadedAt.current = performance.now() - 1_500;
-          setLogoLoaded(true);
-        }}
-      />
+      <div className="app-loader-logo">
+        <img
+          src={loaderLogoUrl}
+          alt="Sweezy pop"
+          onLoad={() => {
+            logoLoadedAt.current = performance.now();
+            setLogoLoaded(true);
+          }}
+          onError={() => {
+            logoLoadedAt.current = performance.now() - 1_500;
+            setLogoLoaded(true);
+          }}
+        />
+        <span className="app-loader-shine" aria-hidden="true" />
+      </div>
     </div>
   );
 }
@@ -1297,7 +1301,6 @@ function TopNav({
     <header className="top-nav">
       <button className="brand" onClick={() => setView('menu')}>
         <BrandMark theme={theme} />
-        <span>{theme.siteName}</span>
       </button>
       <div className="nav-spacer" />
       <div className="locale-switch" aria-label={t(locale, 'languageSwitch')}>
