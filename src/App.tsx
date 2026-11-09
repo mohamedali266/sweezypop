@@ -97,6 +97,16 @@ const brandLogoUrl = '/brand/sweezypop-logo-3d-v2.png';
 const brandAppIcon512Url = '/brand/sweezypop-app-icon-v2-512.png';
 const brandAppIcon192Url = '/brand/sweezypop-app-icon-v2-192.png';
 const brandFaviconUrl = '/brand/sweezypop-app-icon-v2-64.png';
+const productionBrandAssets = {
+  logo: 'https://sweezypop-1.vercel.app/brand/sweezypop-logo-3d-v2.png?v=fa38cf6',
+  appIcon: 'https://sweezypop-1.vercel.app/brand/sweezypop-app-icon-v2-512.png?v=fa38cf6',
+  favicon: 'https://sweezypop-1.vercel.app/brand/sweezypop-app-icon-v2-64.png?v=fa38cf6',
+} as const;
+const replacedBrandAssets = {
+  logo: 'https://kedrciyshstlsrkepnav.supabase.co/storage/v1/object/public/brand-assets/sweezypop/website?v=1793923507861',
+  appIcon: 'https://kedrciyshstlsrkepnav.supabase.co/storage/v1/object/public/brand-assets/sweezypop/app?v=1793923512968',
+  favicon: 'https://kedrciyshstlsrkepnav.supabase.co/storage/v1/object/public/brand-assets/sweezypop/favicon?v=1793923517609',
+} as const;
 function applicationServerKey(value: string) {
   const padding = '='.repeat((4 - value.length % 4) % 4);
   const decoded = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
@@ -191,6 +201,9 @@ function normalizeLayout(value: unknown): MenuLayout {
 
 function normalizeThemeSettings(value: unknown): ThemeSettings {
   const theme = value && typeof value === 'object' ? (value as Partial<ThemeSettings>) : {};
+  const logoUrl = theme.logoUrl === replacedBrandAssets.logo ? productionBrandAssets.logo : theme.logoUrl || '';
+  const appIconUrl = theme.appIconUrl === replacedBrandAssets.appIcon ? productionBrandAssets.appIcon : theme.appIconUrl || '';
+  const faviconUrl = theme.faviconUrl === replacedBrandAssets.favicon ? productionBrandAssets.favicon : theme.faviconUrl || '';
   return {
     ...defaultTheme,
     ...theme,
@@ -202,8 +215,9 @@ function normalizeThemeSettings(value: unknown): ThemeSettings {
       : defaultTheme.socialLinks,
     phoneCountryCode: theme.phoneCountryCode || defaultTheme.phoneCountryCode,
     phoneNumber: theme.phoneNumber || '',
-    appIconUrl: theme.appIconUrl || '',
-    faviconUrl: theme.faviconUrl || '',
+    logoUrl,
+    appIconUrl,
+    faviconUrl,
     reviewsVisible: theme.reviewsVisible !== false,
     footerCopyright: {
       en: theme.footerCopyright?.en || defaultTheme.footerCopyright.en,
