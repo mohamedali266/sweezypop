@@ -468,7 +468,7 @@ button {
 .hero-controls {
   position: absolute;
   z-index: 1;
-  bottom: 12%;
+  bottom: 32%;
   left: clamp(28px, 5.5%, 76px);
   display: flex;
   flex-direction: column;
@@ -489,7 +489,10 @@ button {
 
 .eyebrow {
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  background: rgba(33, 27, 51, 0.64);
+  box-shadow: 0 8px 22px rgba(25, 12, 35, 0.18);
+  backdrop-filter: blur(8px);
 }
 
 .primary-action {
@@ -2991,7 +2994,7 @@ button {
   }
 
   .hero-controls {
-    bottom: 7%;
+    bottom: 31%;
     left: 5.5%;
     gap: 6px;
   }
@@ -2999,8 +3002,6 @@ button {
   .hero-controls .eyebrow {
     padding: 4px 7px;
     font-size: clamp(0.54rem, 2.4vw, 0.72rem);
-    background: rgba(33, 27, 51, 0.62);
-    backdrop-filter: blur(8px);
   }
 
   .hero-controls .primary-action {
