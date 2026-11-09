@@ -21,7 +21,9 @@ import {
   CalendarClock,
   ChefHat,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   ClipboardList,
   Copyright,
   CircleUserRound,
@@ -1946,6 +1948,7 @@ function Dashboard(props: {
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
 
   useEffect(() => {
     QRCode.toDataURL(props.theme.menuUrl, { width: 220, margin: 2, color: { dark: '#1d1a2e', light: '#ffffff' } }).then(setQrDataUrl);
@@ -1992,12 +1995,47 @@ function Dashboard(props: {
     sidebarItems.push({ id: 'footer', label: 'Footer', icon: Copyright });
   }
 
+  const sortedCategories = useMemo(
+    () => [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder),
+    [props.categories],
+  );
+
+  const commitCategoryOrder = (nextCategories: Category[]) => {
+    props.setCategories(nextCategories.map((category, index) => ({ ...category, sortOrder: index + 1 })));
+  };
+
   const addCategory = () => {
-    props.setCategories([{ id: `cat-${Date.now()}`, name: { en: 'New category', de: 'Neue Kategorie' }, sortOrder: 0 }, ...props.categories]);
+    const nextSortOrder = Math.max(0, ...props.categories.map((category) => category.sortOrder)) + 1;
+    props.setCategories([
+      ...props.categories,
+      { id: `cat-${Date.now()}`, name: { en: 'New category', de: 'Neue Kategorie' }, sortOrder: nextSortOrder },
+    ]);
+  };
+
+  const moveCategory = (categoryId: string, offset: number) => {
+    const fromIndex = sortedCategories.findIndex((category) => category.id === categoryId);
+    const toIndex = fromIndex + offset;
+    if (fromIndex < 0 || toIndex < 0 || toIndex >= sortedCategories.length) return;
+    const reordered = [...sortedCategories];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    commitCategoryOrder(reordered);
+  };
+
+  const moveDraggedCategory = (targetId: string) => {
+    if (!draggedCategoryId || draggedCategoryId === targetId) return;
+    const fromIndex = sortedCategories.findIndex((category) => category.id === draggedCategoryId);
+    const toIndex = sortedCategories.findIndex((category) => category.id === targetId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const reordered = [...sortedCategories];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    commitCategoryOrder(reordered);
+    setDraggedCategoryId(null);
   };
 
   const deleteCategory = (categoryId: string) => {
-    props.setCategories(props.categories.filter((category) => category.id !== categoryId));
+    commitCategoryOrder(sortedCategories.filter((category) => category.id !== categoryId));
     props.setItems(props.items.filter((item) => item.categoryId !== categoryId));
   };
 
@@ -2255,11 +2293,31 @@ function Dashboard(props: {
               </button>
             </div>
             <div className="editable-list">
-              {props.categories.map((category) => (
-                <div key={category.id} className="category-translation-row">
+              {sortedCategories.map((category, index) => (
+                <div
+                  key={category.id}
+                  className={`category-translation-row ${draggedCategoryId === category.id ? 'dragging' : ''}`}
+                  draggable
+                  onDragStart={() => setDraggedCategoryId(category.id)}
+                  onDragEnd={() => setDraggedCategoryId(null)}
+                  onDragOver={(event: DragEvent<HTMLDivElement>) => event.preventDefault()}
+                  onDrop={() => moveDraggedCategory(category.id)}
+                >
+                  <span className="category-drag-handle" title={props.locale === 'de' ? 'Zum Sortieren ziehen' : 'Drag to reorder'}>
+                    <GripVertical size={18} />
+                  </span>
+                  <span className="category-position" aria-label={`${props.locale === 'de' ? 'Position' : 'Position'} ${index + 1}`}>{index + 1}</span>
                   <label><span>English</span><input value={category.name.en} onChange={(event) => props.setCategories(props.categories.map((current) => current.id === category.id ? { ...current, name:{ ...current.name, en:event.target.value } } : current))} /></label>
                   <label><span>Deutsch</span><input value={category.name.de} onChange={(event) => props.setCategories(props.categories.map((current) => current.id === category.id ? { ...current, name:{ ...current.name, de:event.target.value } } : current))} /></label>
-                  <button onClick={() => deleteCategory(category.id)}>
+                  <div className="category-order-actions">
+                    <button type="button" disabled={index === 0} onClick={() => moveCategory(category.id, -1)} title={props.locale === 'de' ? 'Nach oben' : 'Move up'} aria-label={props.locale === 'de' ? 'Kategorie nach oben verschieben' : 'Move category up'}>
+                      <ChevronUp size={17} />
+                    </button>
+                    <button type="button" disabled={index === sortedCategories.length - 1} onClick={() => moveCategory(category.id, 1)} title={props.locale === 'de' ? 'Nach unten' : 'Move down'} aria-label={props.locale === 'de' ? 'Kategorie nach unten verschieben' : 'Move category down'}>
+                      <ChevronDown size={17} />
+                    </button>
+                  </div>
+                  <button type="button" className="category-delete" onClick={() => deleteCategory(category.id)} title={t(props.locale, 'delete')} aria-label={t(props.locale, 'delete')}>
                     <Trash2 size={16} />
                   </button>
                 </div>
