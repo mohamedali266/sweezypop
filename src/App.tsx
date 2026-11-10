@@ -70,6 +70,7 @@ import {
   registerOrderPush,
   resetAdminUserPassword,
   saveRemoteState,
+  saveRemoteOptionGroups,
   saveRemoteSiteSettings,
   saveRemoteUsers,
   trackRemoteOrder,
@@ -853,12 +854,11 @@ function AppContent() {
     if (saveInFlight.current) throw new Error('catalog-save-busy');
 
     const previous = baseline.current;
-    const snapshot: RemoteState = { categories, items, optionGroups:nextGroups, orders, users, theme, hours, layout };
     saveInFlight.current = true;
     setSaveMessage('Wird gespeichert …');
     try {
-      await saveRemoteState(snapshot, previous);
-      baseline.current = snapshot;
+      await saveRemoteOptionGroups(nextGroups, previous.optionGroups);
+      baseline.current = { ...previous,optionGroups:nextGroups };
       setOptionGroups(nextGroups);
       setSaveMessage('Gespeichert');
     } catch (error) {

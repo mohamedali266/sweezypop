@@ -497,6 +497,36 @@ function catalogRows(state: RemoteState, restaurantId: string): Record<string, R
   };
 }
 
+function optionGroupRows(groups: SharedOptionGroup[], restaurantId: string): Row[] {
+  return groups.map(group => ({
+    id:group.id,
+    restaurant_id:restaurantId,
+    name_en:group.name.en,
+    name_de:group.name.de,
+    mode:group.mode,
+    required:group.required,
+    min_select:group.min,
+    max_select:group.max,
+    options:group.options,
+    linked_category_ids:group.linkedCategoryIds,
+    linked_item_ids:group.linkedItemIds,
+    active:group.active,
+    sort_order:group.sortOrder,
+  }));
+}
+
+function changedRows(table: string, nextRows: Row[], previousRows: Row[]) {
+  const beforeById = new Map(previousRows.map(row => [row.id, row]));
+  const changes: { table: string; id: string; before: Row | null; after: Row | null }[] = [];
+  for (const row of nextRows) {
+    const old = beforeById.get(row.id) || null;
+    if (JSON.stringify(old) !== JSON.stringify(row)) changes.push({ table, id:row.id, before:old, after:row });
+    beforeById.delete(row.id);
+  }
+  for (const row of beforeById.values()) changes.push({ table, id:row.id, before:row, after:null });
+  return changes;
+}
+
 export async function saveRemoteState(state: RemoteState, previous: RemoteState) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const restaurant = await getRestaurant();
@@ -505,14 +535,21 @@ export async function saveRemoteState(state: RemoteState, previous: RemoteState)
   const changes: { table: string; id: string; before: Row | null; after: Row | null }[] = [];
   // Only changed entities are sent; absent rows elsewhere in the database are never deleted.
   for (const table of ['categories','menu_items','product_option_groups','opening_hours']) {
-    const previousRows = new Map(before[table].map(row => [row.id, row]));
-    for (const row of next[table]) {
-      const old = previousRows.get(row.id) || null;
-      if (JSON.stringify(old) !== JSON.stringify(row)) changes.push({ table, id:row.id, before:old, after:row });
-      previousRows.delete(row.id);
-    }
-    for (const row of previousRows.values()) changes.push({ table,id:row.id,before:row,after:null });
+    changes.push(...changedRows(table, next[table], before[table]));
   }
+  if (!changes.length) return;
+  const { error } = await supabase.rpc('save_catalog_changes', { p_restaurant:restaurant.id, p_changes:changes });
+  if (error) throw error;
+}
+
+export async function saveRemoteOptionGroups(groups: SharedOptionGroup[], previousGroups: SharedOptionGroup[]) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const restaurant = await getRestaurant();
+  const changes = changedRows(
+    'product_option_groups',
+    optionGroupRows(groups, restaurant.id),
+    optionGroupRows(previousGroups, restaurant.id),
+  );
   if (!changes.length) return;
   const { error } = await supabase.rpc('save_catalog_changes', { p_restaurant:restaurant.id, p_changes:changes });
   if (error) throw error;

@@ -22,6 +22,13 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   const visibleItems = useMemo(() => items.filter(item => `${item.name.en} ${item.name.de}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
   const editorOpen = Boolean(editing);
   const portalTarget = typeof document === 'undefined' ? null : document.body;
+  const validCategoryIds = useMemo(() => new Set(categories.map(category => category.id)),[categories]);
+  const validItemIds = useMemo(() => new Set(items.map(item => item.id)),[items]);
+  const normalizeLinks = (group: SharedOptionGroup): SharedOptionGroup => ({
+    ...group,
+    linkedCategoryIds:[...new Set(group.linkedCategoryIds.filter(id => validCategoryIds.has(id)))],
+    linkedItemIds:[...new Set(group.linkedItemIds.filter(id => validItemIds.has(id)))],
+  });
   useEffect(() => {
     if (!editorOpen) return;
     const previousBodyOverflow = document.body.style.overflow;
@@ -47,7 +54,7 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   };
 
   const beginEditing = (group: SharedOptionGroup) => {
-    const draft = structuredClone(group);
+    const draft = normalizeLinks(structuredClone(group));
     initialDraft.current = JSON.stringify(draft);
     setEditing(draft);
     setQuery('');
@@ -68,8 +75,13 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
       await onChange(nextGroups);
       if (closeAfterSave) setEditing(null);
       return true;
-    } catch {
-      setError(locale === 'de' ? 'Speichern fehlgeschlagen. Die Änderungen wurden nicht verworfen. Bitte Verbindung prüfen und erneut versuchen.' : 'Save failed. Your changes are still here. Check the connection and try again.');
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause || '');
+      console.error('Option group save failed.', cause);
+      const conflict = message.includes('Data changed on another device');
+      setError(conflict
+        ? (locale === 'de' ? 'Die Daten wurden zwischenzeitlich geändert. Deine Eingaben bleiben erhalten; bitte die Seite neu laden und erneut speichern.' : 'This data changed elsewhere. Your entries are still here; reload the page and save again.')
+        : (locale === 'de' ? 'Speichern fehlgeschlagen. Deine Änderungen bleiben erhalten. Bitte erneut versuchen.' : 'Save failed. Your changes are still here. Please try again.'));
       return false;
     } finally {
       setSaving(false);
@@ -77,11 +89,12 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   };
   const save = async () => {
     if (!editing) return;
-    const minimum = editing.required ? Math.max(1,editing.min) : editing.min;
-    const availableCount = editing.options.filter(option => option.available).length;
-    const invalid = !editing.name.en.trim() || !editing.name.de.trim() || !editing.options.length || editing.options.some(option => !option.name.en.trim() || !option.name.de.trim() || option.priceDelta < 0 || !Number.isFinite(option.priceDelta)) || minimum > editing.max || availableCount < Math.max(1,minimum) || (!editing.linkedCategoryIds.length && !editing.linkedItemIds.length);
+    const cleaned = normalizeLinks(editing);
+    const minimum = cleaned.required ? Math.max(1,cleaned.min) : cleaned.min;
+    const availableCount = cleaned.options.filter(option => option.available).length;
+    const invalid = !cleaned.name.en.trim() || !cleaned.name.de.trim() || !cleaned.options.length || cleaned.options.some(option => !option.name.en.trim() || !option.name.de.trim() || option.priceDelta < 0 || !Number.isFinite(option.priceDelta)) || minimum > cleaned.max || availableCount < Math.max(1,minimum) || (!cleaned.linkedCategoryIds.length && !cleaned.linkedItemIds.length);
     if (invalid) { setError(locale === 'de' ? 'Namen, Optionen, Auswahlgrenzen und mindestens eine Verknüpfung vollständig ausfüllen.' : 'Complete names, options, limits and at least one connection.'); return; }
-    const normalized = { ...editing, min:minimum, max:editing.mode === 'single' ? 1 : editing.max };
+    const normalized = { ...cleaned, min:minimum, max:cleaned.mode === 'single' ? 1 : cleaned.max };
     const nextGroups = groups.some(group => group.id === normalized.id) ? groups.map(group => group.id === normalized.id ? normalized : group) : [...groups,normalized];
     await commit(nextGroups, true);
   };
