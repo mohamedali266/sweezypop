@@ -822,10 +822,13 @@ function AppContent() {
         await saveRemoteUsers(users,previous.users);
         baseline.current = snapshot;
         setSaveMessage('Gespeichert');
-        setSyncVersion((v) => v + 1);
       }).catch(() => {
         setSaveMessage('Nicht gespeichert. Verbindung oder Datenkonflikt: Bitte neu laden und erneut versuchen.');
-      }).finally(() => { saveInFlight.current = false; });
+      }).finally(() => {
+        saveInFlight.current = false;
+        // Re-run the comparison after an in-flight save so edits made during it are never stranded.
+        setSyncVersion((v) => v + 1);
+      });
     }, 900);
 
     return () => window.clearTimeout(syncId);
@@ -839,6 +842,32 @@ function AppContent() {
     }
     setTheme(nextTheme);
     setLayout(nextLayout);
+  };
+
+  const persistOptionGroups = async (nextGroups: SharedOptionGroup[]) => {
+    if (!isSupabaseConfigured || !['admin','owner'].includes(authRole || '')) {
+      setOptionGroups(nextGroups);
+      return;
+    }
+    if (!remoteReady || !baseline.current) throw new Error('catalog-not-ready');
+    if (saveInFlight.current) throw new Error('catalog-save-busy');
+
+    const previous = baseline.current;
+    const snapshot: RemoteState = { categories, items, optionGroups:nextGroups, orders, users, theme, hours, layout };
+    saveInFlight.current = true;
+    setSaveMessage('Wird gespeichert …');
+    try {
+      await saveRemoteState(snapshot, previous);
+      baseline.current = snapshot;
+      setOptionGroups(nextGroups);
+      setSaveMessage('Gespeichert');
+    } catch (error) {
+      setSaveMessage('Nicht gespeichert. Verbindung oder Datenkonflikt: Bitte erneut versuchen.');
+      throw error;
+    } finally {
+      saveInFlight.current = false;
+      setSyncVersion((v) => v + 1);
+    }
   };
 
   useEffect(() => {
@@ -1102,7 +1131,7 @@ function AppContent() {
           categories={categories}
           setCategories={setCategories}
           optionGroups={optionGroups}
-          setOptionGroups={setOptionGroups}
+          persistOptionGroups={persistOptionGroups}
           orders={orders}
           setOrders={setOrders}
           users={users}
@@ -1971,7 +2000,7 @@ function Dashboard(props: {
   categories: Category[];
   setCategories: (categories: Category[]) => void;
   optionGroups: SharedOptionGroup[];
-  setOptionGroups: (groups: SharedOptionGroup[]) => void;
+  persistOptionGroups: (groups: SharedOptionGroup[]) => Promise<void>;
   orders: Order[];
   setOrders: (orders: Order[]) => void;
   users: AppUser[];
@@ -2318,7 +2347,7 @@ function Dashboard(props: {
             <SharedOptionGroupsManager
               locale={props.locale}
               groups={props.optionGroups}
-              onChange={props.setOptionGroups}
+              onChange={props.persistOptionGroups}
               categories={props.categories}
               items={props.items.filter((item) => !isOfferItem(item))}
             />

@@ -389,3 +389,22 @@ test('product sizes use final server prices and reusable groups link by category
   await assert.rejects(db.query("update product_option_groups set options='[{\"id\":\"cream\",\"name\":{\"en\":\"Cream\",\"de\":\"Sahne\"},\"priceDelta\":1.25,\"available\":false}]'::jsonb where id='extras'"),/active_option/);
   await db.exec("update product_option_groups set active=false where id='extras'; update menu_items set sizes='[]'::jsonb where id='drink'");
 });
+
+test('editing a reusable option group preserves old options and atomically adds the new one',async()=>{
+  await db.query("select set_config('test.uid',$1,false)",[admin]);
+  const originalOptions=['Banana','Strawberry','Blueberry','Mango'].map((name,index)=>({
+    id:`fruit-${index+1}`,name:{en:name,de:name},priceDelta:index,available:true,
+  }));
+  await db.query(`insert into product_option_groups(
+    id,restaurant_id,name_en,name_de,mode,required,min_select,max_select,options,linked_category_ids,linked_item_ids,active,sort_order
+  ) values ('fruit-edit-test','sweezypop','Fruit','Frucht','single',true,1,1,$1::jsonb,array['food'],'{}',true,99)`,[JSON.stringify(originalOptions)]);
+  const before=(await db.query(`select id,restaurant_id,name_en,name_de,mode,required,min_select,max_select,options,
+    linked_category_ids,linked_item_ids,active,sort_order from product_option_groups where id='fruit-edit-test'`)).rows[0];
+  const added={id:'fruit-5',name:{en:'Kiwi',de:'Kiwi'},priceDelta:1.5,available:true};
+  const after={...before,options:[...before.options,added]};
+  await db.query("select save_catalog_changes('sweezypop',$1::jsonb)",[JSON.stringify([{table:'product_option_groups',id:before.id,before,after}])]);
+  const savedOptions=(await db.query("select options from product_option_groups where id='fruit-edit-test'")).rows[0].options;
+  assert.deepEqual(savedOptions.slice(0,4),originalOptions);
+  assert.deepEqual(savedOptions[4],added);
+  await db.query("delete from product_option_groups where id='fruit-edit-test'");
+});

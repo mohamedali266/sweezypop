@@ -27,6 +27,36 @@ export function normalizeProductSizes(value: unknown): ProductSize[] {
   });
 }
 
+function optionGroupFromRow(group: Record<string, unknown>): SharedOptionGroup {
+  const rawOptions = Array.isArray(group.options) ? group.options : [];
+  const options = rawOptions.flatMap((entry, index) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const option = entry as { id?: unknown; name?: { en?: unknown; de?: unknown }; priceDelta?: unknown; available?: unknown };
+    const en = typeof option.name?.en === 'string' ? option.name.en : typeof option.name?.de === 'string' ? option.name.de : '';
+    const de = typeof option.name?.de === 'string' ? option.name.de : en;
+    const rawPriceDelta = Number(option.priceDelta);
+    return [{
+      id:typeof option.id === 'string' && option.id ? option.id : `option-${index + 1}`,
+      name:{ en,de },
+      priceDelta:Number.isFinite(rawPriceDelta) && rawPriceDelta >= 0 ? rawPriceDelta : 0,
+      available:option.available !== false,
+    }];
+  });
+  return {
+    id:String(group.id || ''),
+    name:{ en:String(group.name_en || ''), de:String(group.name_de || group.name_en || '') },
+    mode:group.mode === 'multiple' ? 'multiple' : 'single',
+    required:Boolean(group.required),
+    min:Number(group.min_select || 0),
+    max:Number(group.max_select || 1),
+    options,
+    linkedCategoryIds:Array.isArray(group.linked_category_ids) ? group.linked_category_ids.filter((id): id is string => typeof id === 'string') : [],
+    linkedItemIds:Array.isArray(group.linked_item_ids) ? group.linked_item_ids.filter((id): id is string => typeof id === 'string') : [],
+    active:Boolean(group.active),
+    sortOrder:Number(group.sort_order || 0),
+  };
+}
+
 type DbPreparation = { station?: string; estimated_minutes?: number; ingredients_en?: string[]; ingredients_de?: string[]; tools_en?: string[]; tools_de?: string[]; steps_en?: string[]; steps_de?: string[]; warning_en?: string; warning_de?: string };
 type DbOrderLine = { menu_item_id?: string | null; id?: string | null; quantity: number; unit_price?: number; price?: number; name_en?: string; name_de?: string; preparation?: DbPreparation | null };
 type DbOrder = { id: string; order_number?: string | number; source?: 'menu' | 'pos'; customer_name: string; notes?: string; total: number; status: Order['status']; created_at: string; accepted_at?: string; preparing_at?: string; ready_at?: string; order_lines?: DbOrderLine[]; lines?: DbOrderLine[] };
@@ -347,8 +377,21 @@ export async function loadRemoteState(fallback: RemoteState, includePrivate = tr
   const restaurantId = restaurant.id;
   const categoryRows = bootstrap.categories || [];
   const itemRows = bootstrap.items || [];
-  const optionGroupRows = bootstrap.option_groups || [];
+  let optionGroupRows = bootstrap.option_groups || [];
   const hourRows = bootstrap.hours || [];
+
+  if (includePrivate) {
+    const { data: sessionResult } = await supabase.auth.getSession();
+    if (sessionResult.session) {
+      const { data: managedGroups, error: managedGroupsError } = await supabase
+        .from('product_option_groups')
+        .select('id,name_en,name_de,mode,required,min_select,max_select,options,linked_category_ids,linked_item_ids,active,sort_order')
+        .eq('restaurant_id', restaurantId)
+        .order('sort_order', { ascending:true });
+      if (managedGroupsError) throw managedGroupsError;
+      optionGroupRows = managedGroups || [];
+    }
+  }
 
   const categories: Category[] = categoryRows.map((category) => ({
     id: category.id,
@@ -356,7 +399,7 @@ export async function loadRemoteState(fallback: RemoteState, includePrivate = tr
     sortOrder: category.sort_order || 0,
   })) as Category[];
 
-  const optionGroups: SharedOptionGroup[]=optionGroupRows.map(group=>({id:String(group.id),name:{en:String(group.name_en||''),de:String(group.name_de||group.name_en||'')},mode:group.mode as SharedOptionGroup['mode'],required:Boolean(group.required),min:Number(group.min_select||0),max:Number(group.max_select||1),options:Array.isArray(group.options)?group.options as SharedOptionGroup['options']:[],linkedCategoryIds:Array.isArray(group.linked_category_ids)?group.linked_category_ids as string[]:[],linkedItemIds:Array.isArray(group.linked_item_ids)?group.linked_item_ids as string[]:[],active:Boolean(group.active),sortOrder:Number(group.sort_order||0)}));
+  const optionGroups = optionGroupRows.map(group => optionGroupFromRow(group));
   const items: MenuItem[] = itemRows.map((row) => {
     const item = row as Record<string, unknown>;
     const offerDescription = readOfferDescription(String(item.description_de || ''));
