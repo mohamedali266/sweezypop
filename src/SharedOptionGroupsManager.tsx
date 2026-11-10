@@ -21,14 +21,17 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
   const errorRef = useRef<HTMLParagraphElement | null>(null);
   const visibleItems = useMemo(() => items.filter(item => `${item.name.en} ${item.name.de}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
   const editorOpen = Boolean(editing);
-  const portalTarget = typeof document === 'undefined'
-    ? null
-    : document.querySelector<HTMLElement>('.app') ?? document.body;
+  const portalTarget = typeof document === 'undefined' ? null : document.body;
   useEffect(() => {
     if (!editorOpen) return;
-    const previousOverflow = document.body.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previousOverflow; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
   }, [editorOpen]);
   useEffect(() => {
     if (error) errorRef.current?.scrollIntoView({ block:'nearest' });
@@ -94,8 +97,8 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
       <footer><button type="button" disabled={saving} onClick={() => beginEditing(group)}><Edit3/>{text.edit}</button><button type="button" disabled={saving} className="danger" onClick={() => { if (window.confirm(locale === 'de' ? 'Diese Optionsgruppe wirklich löschen?' : 'Delete this option group?')) void commit(groups.filter(current => current.id !== group.id)); }}><Trash2/>{text.delete}</button></footer>
     </article>)}</div>}
 
-    {editing && portalTarget && createPortal(<div className="group-editor-overlay"><aside className="group-editor-drawer" role="dialog" aria-modal="true">
-      <header><div><span>{locale === 'de' ? 'OPTIONEN-BIBLIOTHEK' : 'OPTIONS LIBRARY'}</span><h2>{editing.name[locale] || text.create}</h2><p>{editing.options.length} {locale === 'de' ? 'Optionen' : 'options'} · {editing.linkedCategoryIds.length + editing.linkedItemIds.length} {locale === 'de' ? 'Verknüpfungen' : 'connections'}</p></div><button type="button" disabled={saving} onClick={closeEditor} aria-label="Close"><X/></button></header>
+    {editing && portalTarget && createPortal(<div className="group-editor-overlay"><form className="group-editor-drawer" role="dialog" aria-modal="true" aria-labelledby="group-editor-title" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <header><div><span>{locale === 'de' ? 'OPTIONEN-BIBLIOTHEK' : 'OPTIONS LIBRARY'}</span><h2 id="group-editor-title">{editing.name[locale] || text.create}</h2><p>{editing.options.length} {locale === 'de' ? 'Optionen' : 'options'} · {editing.linkedCategoryIds.length + editing.linkedItemIds.length} {locale === 'de' ? 'Verknüpfungen' : 'connections'}</p></div><button type="button" disabled={saving} onClick={closeEditor} aria-label="Close"><X/></button></header>
       <div className="group-editor-body">
         {error && <p ref={errorRef} className="form-error group-save-error" role="alert">{error}</p>}
         <section><h3>{text.name}</h3><div className="group-form-grid"><label>English<input value={editing.name.en} onChange={event => patch({ name:{ ...editing.name,en:event.target.value } })}/></label><label>Deutsch<input value={editing.name.de} onChange={event => patch({ name:{ ...editing.name,de:event.target.value } })}/></label></div></section>
@@ -122,7 +125,7 @@ export function SharedOptionGroupsManager({ locale, groups, onChange, categories
           </div>
         </section>
       </div>
-      <footer><button type="button" disabled={saving} className="small-action neutral" onClick={closeEditor}>{locale === 'de' ? 'Abbrechen' : 'Cancel'}</button><button type="button" disabled={saving} className="small-action" onClick={() => void save()}><Save/>{saving ? (locale === 'de' ? 'Wird gespeichert …' : 'Saving …') : text.save}</button></footer>
-    </aside></div>, portalTarget)}
+      <footer><button type="button" disabled={saving} className="small-action neutral" onClick={closeEditor}>{locale === 'de' ? 'Abbrechen' : 'Cancel'}</button><button type="submit" disabled={saving} className="small-action"><Save/>{saving ? (locale === 'de' ? 'Wird gespeichert …' : 'Saving …') : text.save}</button></footer>
+    </form></div>, portalTarget)}
   </section>;
 }
