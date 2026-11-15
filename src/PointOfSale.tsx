@@ -18,8 +18,8 @@ const copy = {
     pos: 'Kasse', available: 'verfügbare Artikel', search: 'Artikel suchen', searchPlaceholder: 'Artikel suchen …',
     categories: 'Kategorien', all: 'Alle', noResults: 'Keine verfügbaren Artikel gefunden.', currentOrder: 'Aktuelle Bestellung',
     selectedItems: 'Artikel', closeOrder: 'Bestellung schließen', saved: 'gespeichert', noneSelected: 'Keine Artikel ausgewählt',
-    less: 'weniger', more: 'mehr', remove: 'entfernen', name: 'Name', optional: 'optional', confirm: 'Bestellung bestätigen',
-    saving: 'Wird gespeichert …', openOrder: 'Aktuelle Bestellung öffnen', nameRequired: 'Bitte einen Namen eingeben.',
+    less: 'weniger', more: 'mehr', remove: 'entfernen', optional: 'optional', confirm: 'Bestellung bestätigen',
+    saving: 'Wird gespeichert …', openOrder: 'Aktuelle Bestellung öffnen',
     submitFailed: 'Bestellung nicht bestätigt. Verbindung und Artikelverfügbarkeit prüfen, danach erneut versuchen.',
     focusMode:'Vollbild', exitFocus:'Vollbild verlassen', online:'Online', offline:'Offline', newOrder:'Neue Bestellung', clear:'Leeren',
     hold:'Parken', heldOrders:'Geparkte Bestellungen', noDrafts:'Keine geparkten Bestellungen', resume:'Öffnen', draftSaved:'Bestellung wurde geparkt.',
@@ -35,8 +35,8 @@ const copy = {
     pos: 'Point of sale', available: 'available items', search: 'Search items', searchPlaceholder: 'Search items …',
     categories: 'Categories', all: 'All', noResults: 'No available items found.', currentOrder: 'Current order',
     selectedItems: 'items', closeOrder: 'Close order', saved: 'saved', noneSelected: 'No items selected',
-    less: 'decrease', more: 'increase', remove: 'remove', name: 'Name', optional: 'optional', confirm: 'Confirm order',
-    saving: 'Saving …', openOrder: 'Open current order', nameRequired: 'Please enter a name.',
+    less: 'decrease', more: 'increase', remove: 'remove', optional: 'optional', confirm: 'Confirm order',
+    saving: 'Saving …', openOrder: 'Open current order',
     submitFailed: 'Order was not confirmed. Check the connection and item availability, then try again.',
     focusMode:'Full screen', exitFocus:'Exit full screen', online:'Online', offline:'Offline', newOrder:'New order', clear:'Clear',
     hold:'Hold', heldOrders:'Held orders', noDrafts:'No held orders', resume:'Resume', draftSaved:'Order held safely.',
@@ -98,7 +98,6 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const [query,setQuery] = useState('');
   const [category,setCategory] = useState('all');
   const [cart,setCart] = useState<CartLine[]>([]);
-  const [name,setName] = useState('');
   const [notes,setNotes] = useState('');
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
@@ -130,28 +129,27 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
   const quantity = (key:string,delta:number) => setCart(current => current.map(l => (l.lineKey||cartLineKey(l.item.id,l.selections))===key ? {...l,quantity:Math.min(99,l.quantity+delta)} : l).filter(l => l.quantity>0));
   const submit = async () => {
     if (lock.current || !cart.length) return;
-    if (!name.trim()) { setError(text.nameRequired); return; }
-    const fingerprint = JSON.stringify({name:name.trim(),notes:notes.trim(),lines:cart.map(l => [l.item.id,l.quantity,l.selections])});
+    const fingerprint = JSON.stringify({notes:notes.trim(),lines:cart.map(l => [l.item.id,l.quantity,l.selections])});
     if (attempt.current?.fingerprint!==fingerprint) attempt.current={fingerprint,key:crypto.randomUUID()};
     lock.current=true; setBusy(true); setError('');
     try {
-      const order = await createRemoteOrder({name,notes,lines:cart,requestKey:attempt.current.key,source:'pos'});
-      setSaved(order); onCreated(order); setCart([]); setName(''); setNotes(''); setBasketOpen(false); attempt.current=null;
+      const order = await createRemoteOrder({notes,lines:cart,requestKey:attempt.current.key,source:'pos'});
+      setSaved(order); onCreated(order); setCart([]);  setNotes(''); setBasketOpen(false); attempt.current=null;
     } catch { setError(text.submitFailed); }
     finally { lock.current=false; setBusy(false); }
   };
 
-  const resetOrder=()=>{setCart([]);setName('');setNotes('');setError('');setSaved(null);setNotice('');attempt.current=null;};
+  const resetOrder=()=>{setCart([]);setNotes('');setError('');setSaved(null);setNotice('');attempt.current=null;};
   const refreshDrafts=async()=>{try{setDrafts(await loadPosDrafts());}catch{setError(text.submitFailed);}};
   const holdOrder=async()=>{
     if(!cart.length)return;
     setBusy(true);setError('');
-    try{await savePosDraft({customerName:name.trim(),notes:notes.trim(),lines:cart.map(line=>({id:line.item.id,quantity:line.quantity,selections:line.selections||[]}))});resetOrder();setNotice(text.draftSaved);await refreshDrafts();}
+    try{await savePosDraft({customerName:'',notes:notes.trim(),lines:cart.map(line=>({id:line.item.id,quantity:line.quantity,selections:line.selections||[]}))});resetOrder();setNotice(text.draftSaved);await refreshDrafts();}
     catch{setError(text.submitFailed);}finally{setBusy(false);}
   };
   const resumeDraft=async(draft:PosDraft)=>{
     const next=draft.lines.flatMap(line=>{const item=available.find(candidate=>candidate.id===line.id);const selections=line.selections||[];return item?[{item:configuredCartItem(item,selections),quantity:line.quantity,selections,lineKey:cartLineKey(item.id,selections)}]:[];});
-    setCart(next);setName(draft.customerName);setNotes(draft.notes);setSaved(null);setDraftsOpen(false);setBasketOpen(true);
+    setCart(next);setNotes(draft.notes);setSaved(null);setDraftsOpen(false);setBasketOpen(true);
     if(next.length!==draft.lines.length)setNotice(text.unavailableRemoved);
     try{await deletePosDraft(draft.id);await refreshDrafts();}catch{setError(text.submitFailed);}
   };
@@ -200,7 +198,6 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
         <div><strong>{line.item.name[locale]}</strong>{labels.length>0&&<small>{labels.join(' · ')}</small>}<span>{formatEuro(line.item.price*line.quantity, locale)}</span></div>
         <div className="pos-quantity"><button aria-label={`${line.item.name[locale]}: ${text.less}`} onClick={() => quantity(key,-1)}><Minus size={16} /></button><output>{line.quantity}</output><button aria-label={`${line.item.name[locale]}: ${text.more}`} onClick={() => quantity(key,1)}><Plus size={16} /></button><button aria-label={`${line.item.name[locale]}: ${text.remove}`} onClick={() => setCart(cart.filter(l => (l.lineKey||cartLineKey(l.item.id,l.selections))!==key))}><Trash2 size={16} /></button></div>
       </div>;})}</div>
-      <label>{text.name}<input maxLength={120} value={name} onChange={e => setName(e.target.value)} autoComplete="off" /></label>
       <label>{text.notes} <small>({text.optional})</small><textarea maxLength={2000} rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label>
       </fieldset>
       <div className="pos-basket-secondary"><button disabled={!cart.length||busy} onClick={()=>void holdOrder()}><Archive size={17}/>{text.hold}</button><button title={`${text.clear} (F4)`} disabled={!cart.length||busy} onClick={()=>setConfirmClear(true)}><Eraser size={17}/>{text.clear}</button></div>

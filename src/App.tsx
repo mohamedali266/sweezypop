@@ -934,7 +934,7 @@ function AppContent() {
     setCart((current) => current.filter((line) => (line.lineKey || cartLineKey(line.item.id,line.selections)) !== lineKey));
   };
 
-  const submitOrder = async (payload: { name: string; notes: string }) => {
+  const submitOrder = async (payload: { notes: string }) => {
     if (!cart.length || orderInFlight.current) throw new Error('Bitte warten.');
     const fingerprint = JSON.stringify({ ...payload, lines:cart.map(l => [l.item.id,l.quantity,l.selections]) });
     if (requestAttempt.current?.fingerprint !== fingerprint) requestAttempt.current = { fingerprint, key:crypto.randomUUID() };
@@ -1480,7 +1480,7 @@ function MenuPage(props: {
   addToCart: (item: MenuItem, selections?: ProductSelection[]) => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
+  submitOrder: (payload: { notes: string }) => Promise<void>;
   trackedOrder: Order | null;
   trackingConnection: 'live' | 'checking' | 'offline';
   orderJourneyExpanded: boolean;
@@ -1886,10 +1886,9 @@ function CartPanel({
   cart: CartLine[];
   updateCartQuantity: (itemId: string, delta: number) => void;
   removeCartLine: (itemId: string) => void;
-  submitOrder: (payload: { name: string; notes: string }) => Promise<void>;
+  submitOrder: (payload: { notes: string }) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1898,15 +1897,11 @@ function CartPanel({
 
   const handleSubmitOrder = async () => {
     if (submitting) return;
-    if (!name.trim()) {
-      setFormError(t(locale, 'nameRequired'));
-      return;
-    }
     setFormError('');
     setSubmitting(true);
     try {
-      await submitOrder({ name: name.trim(), notes: notes.trim() });
-      setOpen(false); setName(''); setNotes('');
+      await submitOrder({ notes: notes.trim() });
+      setOpen(false); setNotes('');
     } catch {
       setFormError(locale === 'de' ? 'Bestellung nicht bestätigt. Bitte erneut versuchen. Ihr Warenkorb bleibt erhalten.' : 'Order not confirmed. Please retry. Your basket has been kept.');
     } finally { setSubmitting(false); }
@@ -1962,7 +1957,6 @@ function CartPanel({
               <strong>{currency.format(total)}</strong>
             </div>
             <div className="checkout-fields">
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t(locale, 'customerName')} />
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={t(locale, 'notes')} />
             </div>
             {formError && <p className="form-error">{formError}</p>}

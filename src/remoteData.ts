@@ -556,7 +556,6 @@ export async function saveRemoteOptionGroups(groups: SharedOptionGroup[], previo
 }
 
 export interface OrderInput {
-  name: string;
   notes: string;
   lines: CartLine[];
   requestKey: string;
@@ -578,15 +577,16 @@ function getOrderClientToken() {
 
 export async function createRemoteOrder(input: OrderInput): Promise<Order> {
   if (!supabase) throw new Error('Bestellungen sind derzeit nicht verfuegbar.');
+  const customerName = 'Gast';
   const { data, error } = await supabase.rpc('place_order', {
-    p_slug:restaurantSlug, p_request_key:input.requestKey, p_name:input.name.trim(), p_notes:input.notes.trim(),
+    p_slug:restaurantSlug, p_request_key:input.requestKey, p_name:customerName, p_notes:input.notes.trim(),
     p_lines:input.lines.map(line => ({ id:line.item.id, quantity:line.quantity, selections:line.selections || [] })), p_source:input.source || 'menu',
     p_client_token:input.source === 'pos' ? null : getOrderClientToken(),
   });
   if (error) throw error;
   if (!data?.id || !data?.created_at) throw new Error('Keine Bestaetigung vom Server. Bitte erneut versuchen.');
   return { id:data.id, orderNumber:String(data.order_number), trackingToken:input.requestKey, total:Number(data.total), createdAt:data.created_at,
-    source:input.source || 'menu', customerName:input.name.trim(), notes:input.notes.trim(),
+    source:input.source || 'menu', customerName, notes:input.notes.trim(),
     status:'new', lines:(data.lines as { id:string; name_en:string; name_de:string; price:number; quantity:number }[]).map(line => ({
       quantity:line.quantity, item:{ id:line.id, name:{en:line.name_en,de:line.name_de}, price:Number(line.price),
         categoryId:'snapshot',description:{en:'',de:''},available:false,sortOrder:0,imageStyle:'' },
