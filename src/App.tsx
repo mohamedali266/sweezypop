@@ -578,7 +578,7 @@ function AppContent() {
       event.preventDefault();
       setInstallPrompt(event as BeforeInstallPromptEvent);
       const dismissalKey = authRole ? storageKeys.pwaInstallDismissed : storageKeys.menuPwaInstallDismissed;
-      if ((authRole || view === 'menu') && !standalone && !loadStored(dismissalKey, false)) setShowInstallBanner(true);
+      if (authRole && view !== 'menu' && !standalone && !loadStored(dismissalKey, false)) setShowInstallBanner(true);
     };
 
     const onInstalled = () => {
@@ -610,7 +610,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if ((authRole || view === 'menu') && !isStandalone) {
+    if (authRole && view !== 'menu' && !isStandalone) {
       const dismissalKey = authRole ? storageKeys.pwaInstallDismissed : storageKeys.menuPwaInstallDismissed;
       if (loadStored(dismissalKey, false)) return;
       const timer = window.setTimeout(() => setShowInstallBanner(true), 1200);
@@ -1048,7 +1048,7 @@ function AppContent() {
         />
       )}
       <PullToRefreshIndicator distance={pullDistance} refreshing={refreshing} />
-      {showInstallBanner && !isStandalone && (authRole || view === 'menu') && (
+      {showInstallBanner && !isStandalone && authRole && view !== 'menu' && (
         <InstallAppBanner
           locale={locale}
           theme={theme}
@@ -1858,7 +1858,7 @@ function MenuCard({ item, locale, layout, onAdd }: { item: MenuItem; locale: Loc
   return (
     <article className={`menu-card ${layout}`}>
       <div className={`food-art ${item.imageStyle} ${item.imageUrl ? 'has-image' : ''}`}>
-        {item.imageUrl && <img src={item.imageUrl} alt={item.name[locale]} loading="lazy" onError={hideBrokenMenuImage} />}
+        {item.imageUrl && <img src={item.imageUrl} alt={item.name[locale]} loading="lazy" decoding="async" onError={hideBrokenMenuImage} />}
         {item.badge && <span>{item.badge[locale]}</span>}
       </div>
       <div className="menu-card-body">

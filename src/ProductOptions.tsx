@@ -8,14 +8,20 @@ import './product-options.css';
 const money = (value: number, locale: Locale) => new Intl.NumberFormat(locale === 'de' ? 'de-DE' : 'en-DE', { style:'currency', currency:'EUR' }).format(value);
 const uid = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
-export function ProductOptionsDialog({ item, locale, onClose, onConfirm }: { item: MenuItem; locale: Locale; onClose: () => void; onConfirm: (selections: ProductSelection[]) => void }) {
-  const groups = useMemo(() => activeOptionGroups(item), [item]);
+export function ProductOptionsDialog({ item, locale, onClose, onConfirm, optionalAdditions = false }: { item: MenuItem; optionalAdditions?: boolean; locale: Locale; onClose: () => void; onConfirm: (selections: ProductSelection[]) => void }) {
+  const selectionItem = useMemo(() => optionalAdditions ? {
+    ...item,
+    optionGroups: activeOptionGroups(item).map(group =>
+      group.id === '__size__' ? group : { ...group, required: false, min: 0 },
+    ),
+  } : item, [item, optionalAdditions]);
+  const groups = activeOptionGroups(selectionItem);
   const portalTarget = typeof document === 'undefined' ? null : document.body;
   const [selections,setSelections] = useState<ProductSelection[]>(() => groups.flatMap(group => {
     const available = group.options.filter(option => option.available);
     return group.required && available.length === 1 ? [{ groupId:group.id, optionIds:[available[0].id] }] : [];
   }));
-  const result = validateSelections(item,selections);
+  const result = validateSelections(selectionItem,selections);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -23,7 +29,7 @@ export function ProductOptionsDialog({ item, locale, onClose, onConfirm }: { ite
   }, []);
   const choose = (group: ProductOptionGroup, optionId: string) => setSelections(current => {
     const selected = current.find(value => value.groupId === group.id)?.optionIds || [];
-    const optionIds = group.mode === 'single' ? [optionId] : selected.includes(optionId) ? selected.filter(id => id !== optionId) : selected.length < group.max ? [...selected,optionId] : selected;
+    const optionIds = group.mode === 'single' ? (optionalAdditions && group.id !== '__size__' && selected.includes(optionId) ? [] : [optionId]) : selected.includes(optionId) ? selected.filter(id => id !== optionId) : selected.length < group.max ? [...selected,optionId] : selected;
     return [...current.filter(value => value.groupId !== group.id), ...(optionIds.length ? [{ groupId:group.id,optionIds }] : [])];
   });
   if (!portalTarget) return null;

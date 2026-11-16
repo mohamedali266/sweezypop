@@ -265,6 +265,26 @@ export async function uploadBrandAsset(kind: 'website' | 'app' | 'favicon', file
   return `${data.publicUrl}?v=${Date.now()}`;
 }
 
+async function optimizeMenuImage(file: File): Promise<Blob | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const scale = Math.min(1, 960 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const result = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp', 0.82));
+    return result?.type === 'image/webp' && result.size < file.size ? result : null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export async function uploadMenuImage(kind: 'items' | 'offers', file: File) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
   const allowedTypes: Record<string, string> = {
@@ -277,11 +297,13 @@ export async function uploadMenuImage(kind: 'items' | 'offers', file: File) {
     throw new Error('Choose a PNG, JPEG, or WebP image up to 5 MB.');
   }
 
+  const optimized = await optimizeMenuImage(file);
+  const upload = optimized || file;
   const restaurant = await getRestaurant();
-  const objectPath = `${restaurant.id}/${kind}/${crypto.randomUUID()}.${extension}`;
-  const { error } = await supabase.storage.from('menu-assets').upload(objectPath, file, {
+  const objectPath = `${restaurant.id}/${kind}/${crypto.randomUUID()}.${optimized ? 'webp' : extension}`;
+  const { error } = await supabase.storage.from('menu-assets').upload(objectPath, upload, {
     cacheControl: '31536000',
-    contentType: file.type,
+    contentType: upload.type,
     upsert: false,
   });
   if (error) throw error;

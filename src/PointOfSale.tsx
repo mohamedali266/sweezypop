@@ -185,7 +185,7 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
         const selectedLine = cart.find(line => line.item.id === item.id);
         return <button className={`pos-product${selectedLine ? ' selected' : ''}`} aria-pressed={Boolean(selectedLine)} key={item.id} disabled={busy} onClick={() => requestAdd(item)}>
           {selectedLine && <span className="pos-product-quantity" aria-label={`${cart.filter(line=>line.item.id===item.id).reduce((sum,line)=>sum+line.quantity,0)} ${locale === 'de' ? 'in der Bestellung' : 'in order'}`}>{cart.filter(line=>line.item.id===item.id).reduce((sum,line)=>sum+line.quantity,0)}</span>}
-          {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : <span className="pos-no-image"><ShoppingBag size={26} /></span>}
+          {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" decoding="async" /> : <span className="pos-no-image"><ShoppingBag size={26} /></span>}
           <strong>{item.name[locale]}</strong><span>{formatEuro(item.price, locale)}<Plus size={17} /></span>
         </button>;
       })}</div>
@@ -210,6 +210,6 @@ export function PointOfSale({ items, categories, theme, locale, onCreated }: { i
     {draftsOpen&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.heldOrders}><section className="pos-drafts"><header><h2>{text.heldOrders}</h2><button aria-label={text.close} onClick={()=>setDraftsOpen(false)}><X/></button></header>{drafts.length?<div>{drafts.map(draft=><article key={draft.id}><div><strong>{draft.customerName||`#${draft.id.slice(0,8)}`}</strong><small>{receiptDate(draft.updatedAt,locale)} · {draft.lines.reduce((sum,line)=>sum+line.quantity,0)} {text.selectedItems}</small></div><button onClick={()=>void resumeDraft(draft)}>{text.resume}</button></article>)}</div>:<p className="pos-empty">{text.noDrafts}</p>}</section></div>,portalTarget)}
     {confirmClear&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.confirmClear}><section className="pos-confirm-dialog"><h2>{text.confirmClear}</h2><div><button onClick={()=>setConfirmClear(false)}>{text.keep}</button><button className="danger" onClick={()=>{resetOrder();setConfirmClear(false);}}>{text.clearOrder}</button></div></section></div>,portalTarget)}
     {saved&&createPortal(<div className="pos-modal-scrim" role="dialog" aria-modal="true" aria-label={text.successTitle}><section className="pos-success"><span><Check size={34}/></span><h2>{text.successTitle}</h2><p>{text.successText}</p><strong>#{saved.orderNumber||saved.id}</strong><b>{formatEuro(saved.total,locale)}</b><div><OrderReceipt order={saved} siteName={theme.siteName} locale={locale}/><button onClick={resetOrder}><RefreshCw size={18}/>{text.startNext}</button></div></section></div>,portalTarget)}
-    {configuringItem&&createPortal(<ProductOptionsDialog item={configuringItem} locale={locale} onClose={()=>setConfiguringItem(null)} onConfirm={(selections)=>{add(configuringItem,selections);setConfiguringItem(null);}}/>,portalTarget)}
+    {configuringItem&&createPortal(<ProductOptionsDialog optionalAdditions item={configuringItem} locale={locale} onClose={()=>setConfiguringItem(null)} onConfirm={(selections)=>{add(configuringItem,selections);setConfiguringItem(null);}}/>,portalTarget)}
   </section>;
 }
