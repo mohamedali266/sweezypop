@@ -238,3 +238,11 @@
   .printed-receipt tr { break-inside:avoid; }
 }
 @media(prefers-reduced-motion:reduce) { .pos-product { transition:none; } }
+
+.pos-favorite-choice { display:flex; gap:12px; align-items:center; padding:12px; }
+.pos-detail-toggle { border:0; background:transparent; padding:6px; color:inherit; }
+.pos-detail-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
+.pos-line-details { padding:8px 0; font-size:.85rem; }
+.pos-line-details p { margin:4px 0; }
+.pos-payment label { display:grid; gap:8px; }
+.pos-payment input { padding:14px; font-size:1.3rem; width:100%; box-sizing:border-box; }

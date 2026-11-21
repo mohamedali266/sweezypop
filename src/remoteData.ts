@@ -1086,3 +1086,19 @@ export async function deleteStaffGuide(guide: StaffGuide): Promise<void> {
   });
   if (error) throw error;
 }
+
+
+export async function loadPosFavorites(): Promise<string[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const restaurant = await getRestaurant();
+  const {data,error} = await supabase.rpc('get_pos_favorites',{p_restaurant:restaurant.id});
+  if (error) throw error;
+  return data || [];
+}
+
+export async function savePosFavorites(ids: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const restaurant = await getRestaurant();
+  const {error} = await supabase.rpc('save_pos_favorites',{p_restaurant:restaurant.id,p_items:ids});
+  if (error) throw error;
+}
